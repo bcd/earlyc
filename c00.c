@@ -4,12 +4,9 @@ Copyright 1972 Bell Telephone Laboratories, Inc.
 
 */
 
-ossiz 250;
-ospace() {}	/* fake */
-
 init(s, t)
 char s[]; {
-	extern lookup, symbuf, namsiz;
+	extern symbuf, namsiz;
 	char symbuf[], sp[];
 	int np[], i;
 
@@ -24,9 +21,8 @@ char s[]; {
 
 main(argc, argv)
 int argv[]; {
-	extern init, flush;
-	extern extdef, eof, open, creat;
-	extern fout, fin, error, exit, nerror, tmpfil;
+	extern extdef, eof;
+	extern fout, fin, nerror, tmpfil, xdflg;
 
 	if(argc<4) {
 		error("Arg count");
@@ -41,11 +37,12 @@ int argv[]; {
 		exit(1);
 	}
 	tmpfil = argv[3];
+	xdflg++;
 	init("int", 0);
 	init("char", 1);
 	init("float", 2);
 	init("double", 3);
-/*	init("long", 4);  */
+	init("struct", 4);
 	init("auto", 5);
 	init("extern", 6);
 	init("static", 7);
@@ -60,6 +57,7 @@ int argv[]; {
 	init("continue", 18);
 	init("do", 19);
 	init("default", 20);
+	xdflg = 0;
 	while(!eof) {
 		extdef();
 		blkend();
@@ -70,15 +68,16 @@ int argv[]; {
 }
 
 lookup() {
-	extern hshtab[], hshsiz, pssiz, symbuf[];
-	extern hshlen, hshused, exit, error, nwps;
+	extern hshtab, hshsiz, pssiz, symbuf, xdflg;
+	int hshtab[], symbuf[];
+	extern hshlen, hshused, nwps;
 	auto i, j, np[], sp[], rp[];
 
 	i = 0;
 	sp = symbuf;
 	j = nwps;
 	while(j--)
-		i =+ *sp++;
+		i =+ *sp++ & 077577;
 	if (i<0) i = -i;
 	i =% hshsiz;
 	i =* pssiz;
@@ -86,11 +85,11 @@ lookup() {
 		sp = symbuf;
 		j = nwps;
 		while(j--)
-			if (*np++ != *sp++) goto no;
+			if ((*np++&077577) != *sp++) goto no;
 		return(&hshtab[i]);
 no:		if ((i =+ pssiz) >= hshlen) i = 0;
 	}
-	if(hshused++ > hshsiz) {
+	if(++hshused > hshsiz) {
 		error("Symbol table overflow");
 		exit(1);
 	}
@@ -102,18 +101,25 @@ no:		if ((i =+ pssiz) >= hshlen) i = 0;
 	j = nwps;
 	while(j--)
 		*np++ = *sp++;
+	*np = 0;
+	if (xdflg)
+		rp[4] =| 0200;		/* mark non-deletable */
 	return(rp);
 }
 
 symbol() {
-	extern peeksym, peekc, eof, getchar, subseq, error, line;
-	extern csym[], getstr, symbuf, namsiz, lookup[], ctab, cval;
+	extern peeksym, peekc, eof, line;
+	extern csym, symbuf, namsiz, lookup, ctab, cval;
+	int csym[];
+	extern isn, mosflg, xdflg;
 	auto b, c;
 	char symbuf[], sp[], ctab[];
 
 	if (peeksym>=0) {
 		c = peeksym;
 		peeksym = -1;
+		if (c==20)
+			mosflg = 0;
 		return(c);
 	}
 	if (peekc) {
@@ -141,7 +147,7 @@ loop:
 		return(subseq(c,40,30));
 
 	case 41:	/* - */
-		return(subseq(c,41,31));
+		return(subseq(c,subseq('>',41,50),31));
 
 	case 80:	/* = */
 		if (subseq(' ',0,1)) return(80);
@@ -185,17 +191,18 @@ com1:
 		c = getchar();
 		goto loop;
 
+	case 120:	/* . */
 	case 124:	/* number */
-		cval = 0;
-		if (c=='0')
-			b = 8; else
-			b = 10;
-		while(ctab[c]==124) {
-			cval = cval*b + c -'0';
-			c = getchar();
-		}
 		peekc = c;
-		return(21);
+		switch(c=getnum(c=='0'? 8:10)) {
+			case 25:		/* float 0 */
+				c = 23;
+				break;
+
+			case 23:		/* float non 0 */
+				cval = isn++;
+		}
+		return(c);
 
 	case 122:	/* " */
 		return(getstr());
@@ -205,6 +212,10 @@ com1:
 
 	case 123:	/* letter */
 		sp = symbuf;
+		if (mosflg) {
+			*sp++ = '.';
+			mosflg = 0;
+		}
 		while(ctab[c]==123 | ctab[c]==124) {
 			if (sp<symbuf+namsiz) *sp++ = c;
 			c = getchar();
@@ -229,7 +240,7 @@ com1:
 }
 
 subseq(c,a,b) {
-	extern getchar, peekc;
+	extern peekc;
 
 	if (!peekc)
 		peekc = getchar();
@@ -239,13 +250,16 @@ subseq(c,a,b) {
 	return(b);
 }
 getstr() {
-	extern isn, cval;
+	extern isn, cval, strflg;
 	auto c;
+	char t[], d[];
 
-	printf(".data;L%d:.byte ", cval=isn++);
+	t = ".text";
+	d = ".data";
+	printf("%s;L%d:.byte ", (strflg?t:d), cval=isn++);
 	while((c=mapch('"')) >= 0)
 		printf("%o,", c);
-	printf("0;.even;.text\n");
+	printf("0;.even;%s\n", (strflg?d:t));
 	return(22);
 }
 
@@ -306,14 +320,18 @@ mapch(c)
 }
 
 tree() {
-	extern symbol, block, csym[], ctyp, isn,
-		peeksym, opdope[], build, error, cp[], cmst[],
-		space, ospace, cval, ossiz, exit, errflush, cmsiz;
+	extern csym, ctyp, isn, fcval, peeksym, opdope, cp, cmst;
+	int csym[], opdope[], cp[], cmst[];
+	extern space, cval, ossiz, cmsiz, mosflg, osleft;
+	double fcval;
+	int space[];
 
-	auto op[], opst[20], pp[], prst[20], andflg, o,
+	int op[], opst[20], pp[], prst[20], andflg, o,
 		p, ps, os;
 
-	space = ospace;
+	osleft = ossiz;
+	space = 0;
+	*space++ = 0;
 	op = opst;
 	pp = prst;
 	cp = cmst;
@@ -327,17 +345,24 @@ advanc:
 	/* name */
 	case 20:
 		if (*csym==0)
-			if((peeksym=symbol())==6)
-				*csym = 6;	/* extern */
-			else {
-				if(csym[2]==0)	/* unseen so far */
+			if((peeksym=symbol())==6) {	/* ( */
+				*csym = 6;		/* extern */
+				csym[1] = 020;		/* int() */
+			} else {
+				csym[1] = 030;		/* array */
+				if (csym[2]==0)
 					csym[2] = isn++;
 			}
-			if(*csym==6)	/* extern */
-			    *cp++ = block(5,20,csym[1],0,*csym,
-					csym[4],csym[5],csym[6],csym[7]);
-			else
-			    *cp++ = block(2,20,csym[1],0,*csym,csym[2]);
+		*cp++ = block(2,20,csym[1],csym[3],*csym,0);
+		if (*csym==6) {			/* external */
+			o = 3;
+			while(++o<8) {
+				pblock(csym[o]);
+				if ((csym[o]&077400) == 0)
+					break;
+			}
+		} else
+			pblock(csym[2]);
 		goto tand;
 
 	/* short constant */
@@ -346,9 +371,16 @@ advanc:
 		*cp++ = block(1,21,ctyp,0,cval);
 		goto tand;
 
-	/* string constant */
+	/* floating constant */
+	case 23:
+		*cp++ = block(1,23,3,0,cval);
+		if (cval)		/* non-0 */
+			printf(".data;L%d:%o;%o;%o;%o;.text\n",cval,fcval);
+		goto tand;
+
+	/* string constant: fake a static char array */
 	case 22:
-		*cp++ = block(1,22,17,0,cval);
+		*cp++ = block(3, 20, 031, 1, 7, 0, cval);
 
 tand:
 		if(cp>=cmst+cmsiz) {
@@ -369,6 +401,8 @@ tand:
 
 	/* ! */
 	case 34:
+	/* ~ */
+	case 38:
 		if (andflg)
 			goto syntax;
 		goto oponst;
@@ -419,8 +453,12 @@ tand:
 		if (!andflg)
 			goto syntax;
 		goto oponst;
-	}
 
+	case 39:	/* . */
+		mosflg++;
+		break;
+
+	}
 	/* binaries */
 	if (!andflg)
 		goto syntax;
@@ -464,7 +502,7 @@ putin:
 
 	/* mcall */
 	case 101:
-		*cp++ = 0;		/* 0 arg call */
+		*cp++ = block(0,0,0,0);	/* 0 arg call */
 		os = 100;
 		goto fbuild;
 
@@ -491,34 +529,16 @@ syntax:
 	return(0);
 }
 
-declare(kw) {
-	extern csym[], symbol, paraml[], parame[];
-	extern error, cval, errflush, peeksym, exit;
-	int t[], n, o;
+scdeclare(kw)
+{
+	extern csym, paraml, parame, peeksym;
+	int csym[], paraml[], parame[];
+	int o;
 
 	while((o=symbol())==20) {		/* name */
-		if(kw>=5) {			/* type or sort? */
-			if(*csym>0)
-				error("%p redeclared", csym[4]);
-			*csym = kw;
-		} else {
-			if ((csym[1]&017)!=0)
-				error("%p redeclared", &csym[4]);
-			csym[1] =| csym[1]&0760 | kw;
-			if (*csym==0)
-				*csym = -2;
-		}
-		while((o=symbol())==4) {	/* [ */
-			if((o=symbol())==21) {	/* const */
-				if(csym[1]>=020)
-					error("Bad vector");
-				csym[3] = cval;
-				o = symbol();
-			}
-			if (o!=5)		/* ] */
-				goto syntax;
-			csym[1] =+ 020;
-		}
+		if(*csym>0 & *csym!=kw)
+			redec();
+		*csym = kw;
 		if(kw==8)  {		/* parameter */
 			*csym = -1;
 			if (paraml==0)
@@ -527,14 +547,180 @@ declare(kw) {
 				*parame = csym;
 			parame = csym;
 		}
-		if (o!=9)	/* , */
+		if ((o=symbol())!=9)	/* , */
 			break;
 	}
 	if(o==1 & kw!=8 | o==7 & kw==8)
 		return;
 syntax:
+	decsyn(o);
+}
+
+tdeclare(kw, offset, mos)
+{
+	int o, elsize, ds[];
+	extern xdflg, peeksym, mosflg, defsym, csym;
+	int csym[], ssym[];
+
+	if (kw == 4) {				/* struct */
+		ssym = 0;
+		ds = defsym;
+		mosflg = mos;
+		if ((o=symbol())==20) {		/* name */
+			ssym = csym;
+			o = symbol();
+		}
+		mosflg = mos;
+		if (o != 6) {			/* ( */
+			if (ssym==0)
+				goto syntax;
+			if (*ssym!=8)		/* class structname */
+				error("Bad structure name");
+			if (ssym[3]==0) {	/* no size yet */
+				kw = 5;		/* deferred MOS */
+				elsize = ssym;
+			} else
+				elsize = ssym[3];
+			peeksym = o;
+		} else {
+			if (ssym) {
+				if (*ssym)
+					redec();
+				*ssym = 8;
+				ssym[3] = 0;
+			}
+			elsize = declist(4);
+			if ((elsize&01) != 0)
+				elsize++;
+			defsym = ds;
+			if ((o = symbol()) != 7)	/* ) */
+				goto syntax;
+			if (ssym)
+				ssym[3] = elsize;
+		}
+	}
+	mosflg = mos;
+	if ((peeksym=symbol()) == 1) {		/* ; */
+		peeksym = -1;
+		mosflg = 0;
+		return(offset);
+	}
+	do {
+		offset =+ t1dec(kw, offset, mos, elsize);
+		if (xdflg & !mos)
+			return;
+	} while ((o=symbol()) == 9);		/* , */
+	if (o==1)
+		return(offset);
+syntax:
+	decsyn(o);
+}
+
+t1dec(kw, offset, mos, elsize)
+{
+	int type, nel, defsym[], t1;
+	extern defsym, mosflg;
+
+	nel = 0;
+	mosflg = mos;
+	if ((t1=getype(&nel)) < 0)
+		goto syntax;
+	type = 0;
+	do
+		type = type<<2 | (t1 & 03);
+	while(t1 =>> 2);
+	t1 = type<<3 | kw;
+	if (defsym[1] & defsym[1]!=t1)
+		redec();
+	defsym[1] = t1;
+	defsym[3] = elsize;
+	elsize = length(defsym);
+	if (mos) {
+		if (*defsym)
+			redec();
+		else
+			*defsym = 4;
+		if ((offset&1)!=0 & elsize!=1)
+			offset++;
+		defsym[2] = offset;
+	} else
+		if (*defsym == 0)
+			*defsym = -2;		/* default auto */
+	if (nel==0)
+		nel = 1;
+	defsym[8] = nel;
+syntax:
+	return(nel*elsize);
+}
+
+getype(pnel)
+int pnel[];
+{
+	int o, type;
+	extern cval, peeksym, xdflg, defsym, csym, pssiz;
+	int defsym[], csym[];
+
+	switch(o=symbol()) {
+
+	case 42:					/* * */
+		return(getype(pnel)<<2 | 01);
+
+	case 6:						/* ( */
+		type = getype(pnel);
+		if ((o=symbol()) != 7)			/* ) */
+			goto syntax;
+		goto getf;
+
+	case 20:					/* name */
+		defsym = csym;
+		type = 0;
+	getf:
+		switch(o=symbol()) {
+
+		case 6:					/* ( */
+			if (xdflg) {
+				xdflg = 0;
+				o = defsym;
+				scdeclare(8);
+				defsym = o;
+				xdflg++;
+			} else
+				if ((o=symbol()) != 7)	/* ) */
+					goto syntax;
+			type = type<<2 | 02;
+			goto getf;
+
+		case 4:					/* [ */
+			if ((o=symbol()) != 5) {	/* ] */
+				if (o!=21)		/* const */
+					goto syntax;
+				*pnel = cval;
+				if ((o=symbol())!=5)
+					goto syntax;
+			}
+			type = type<<2 | 03;
+			goto getf;
+		}
+		peeksym = o;
+		return(type);
+	}
+syntax:
+	decsyn(o);
+	return(-1);
+}
+
+decsyn(o)
+{
 	error("Declaration syntax");
 	errflush(o);
+}
+
+redec()
+{
+	extern csym;
+	int csym[];
+
+	error("%p redeclared", &csym[4]);
 }
 
 /* storage */
@@ -544,38 +730,48 @@ efftab 1;
 cctab 2;
 sptab 3;
 symbuf[4];
-pssiz 8;
+pssiz 9;
 namsiz 8;
 nwps 4;
-hshused 0;
+hshused;
 hshsiz 100;
-hshlen 800;	/* 8*hshsiz */
-hshtab[800];
-space 0;
-cp 0;
+hshlen 900;	/* 9*hshsiz */
+hshtab[900];
+space;
+cp;
 cmsiz 40;
 cmst[40];
-ctyp 0;
+ctyp;
 isn 1;
 swsiz 120;
 swtab[120];
-swp 0;
-contlab 0;
-brklab 0;
-deflab 0;
+swp;
+contlab;
+brklab;
+deflab;
 nreg 4;
-maprel[] 60,61,64,65,62,63,68,69,66,67;
-nauto 0;
-stack 0;
+nauto;
+stack;
 peeksym 0177777;
-peekc 0;
-eof 0;
+peekc;
+eof;
 line 1;
-csym 0;
-cval 0;
+defsym;
+xdflg;
+csym;
+cval;
+fcval 0;	/* a double number */
+fc1 0;
+fc2 0;
+fc3 0;
 ncpw 2;
-nerror 0;
+nerror;
 paraml;
 parame;
 tmpfil;
+strflg;
+ossiz 250;
+osleft;
+mosflg;
+debug 0;
 

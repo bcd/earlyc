@@ -141,9 +141,7 @@ popstk(a) {
 
 length(t) {
 
-	if (t<0)
-		t =+ 020;
-	if (t>=020)
+	if (t>=010)
 		return(2);
 	switch(t) {
 
@@ -173,18 +171,25 @@ rlength(c) {
 	return((l=length(c))==1? 2: l);
 }
 
-printn(n,b) {
-	extern putchar;
-	auto a;
+printd(n) {
+	int a;
 
-	if(a=n/b) /* assignment, not test for equality */
-		printn(a, b); /* recursive */
-	putchar(n%b + '0');
+	if(a=n/10)
+		printd(a);
+	putchar(n%10 + '0');
+}
+
+printo(n)
+{
+	int a;
+	if (a = (n>>3) & 017777)
+		printo(a);
+	putchar((n&07) + '0');
 }
 
 printf(fmt,x1,x2,x3,x4,x5,x6,x7,x8,x9)
 char fmt[]; {
-	extern printn, putchar, namsiz, ncpw;
+	extern namsiz, ncpw;
 	char s[];
 	auto adx[], x, c, i[];
 
@@ -198,20 +203,25 @@ loop:
 	x = *adx++;
 	switch (c = *fmt++) {
 
+	case 'o':
+		printo(x);
+		goto loop;
+
 	case 'd': /* decimal */
-	case 'o': /* octal */
 		if(x < 0) {
 			x = -x;
 			if(x<0)  {	/* - infinity */
-				if(c=='o')
-					printf("100000");
-				else
-					printf("-32767");
+				printf("-32768");
 				goto loop;
 			}
 			putchar('-');
 		}
-		printn(x, c=='o'?8:10);
+		printd(x);
+		goto loop;
+
+	case 'c':
+		if (x)
+			putchar(x);
 		goto loop;
 
 	case 's': /* string */
@@ -226,7 +236,7 @@ loop:
 		c = namsiz;
 		while(c--)
 			if(*s)
-				putchar(*s++);
+				putchar((*s++)&0177);
 		goto loop;
 	}
 	putchar('%');
