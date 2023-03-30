@@ -1,24 +1,18 @@
 / c code tables-- compile to register
 
-fp = 1		/ enable floating-point
-
 .globl	_regtab
 
-_regtab=.; .+2
-	20.;	cr20
-	21.;	cr20
-	22.;	cr20
+.data
+_regtab=.
+	106.;	cr106
 	30.;	cr30
 	31.;	cr30
 	32.;	cr32
 	33.;	cr32
-	34.;	cr34
-	35.;	cr35
-	29.;	cr29
-	36.;	cr36
 	37.;	cr37
 	38.;	cr38
-	101.;	cr100
+	98.;	cr100
+	99.;	cr100
 	80.;	cr80
 	40.;	cr40
 	41.;	cr40	/ - like +
@@ -26,86 +20,98 @@ _regtab=.; .+2
 	43.;	cr43
 	44.;	cr43
 	45.;	cr45
-	46.;	cr45
+	46.;	cr46
 	47.;	cr47
 	48.;	cr48
-	60.;	cr60
-	61.;	cr60
-	62.;	cr60
-	63.;	cr60
-	64.;	cr60
-	65.;	cr60
-	66.;	cr60
-	67.;	cr60
-	68.;	cr60
-	69.;	cr60
+	49.;	cr49
 	70.;	cr70
 	71.;	cr70
 	72.;	cr72
 	73.;	cr73
-	74.;	cr73
+	74.;	cr74
 	75.;	cr75
-	76.;	cr75
+	76.;	cr76
 	77.;	cr77
 	78.;	cr78
+	81.;	cr78
+	79.;	cr79
 	102.;	cr102
-	97.;	cr97
+	51.;	cr51
+	52.;	cr52
+	104.;	cr104
 	0
+.text
+
+/ init expression
+cr104:
+%c,n
+C1
+
+%a,n
+%af,n
+A1
 
 / goto
 cr102:
 %i,n
-	jmp	*A1
+	jmp	A1
 
 %n*,n
 	F*
-	jmp	*#1(R)
-
-%n,n
-	F
-	jmp	(R)
+	jmp	#1(R)
 
 / call
 cr100:
-%n*,n
-	F*
-	jsr	pc,*#1(R)
-
 %a,n
-	jsr	pc,*A1
+%a,nf
+	jsr	pc,IA1
+
+%n*,n
+%n*,nf
+	F*
+	jsr	pc,#1(R)
 
 %n,n
+%n,nf
 	F
 	jsr	pc,(R)
 
-/ name, constant
-cr20:
+/ addressible
+cr106:
 %z,n
 	clr	R
 
-%aw,n
-	mov	A,R
+%zf,n
+	clrf	R
 
-%ab,n
-	movb	A,R
+%a,n
+%ad,n
+	movB1	A1,R
 
-.if fp
 %af,n
-	M
-	movf	A,R
+	movof	A1,R
 
-.endif
+%n*,n
+%nd*,n
+	F*
+	movB1	#1(R),R
+
+%nf*,n
+	F*
+	movof	#1(R),R
 
 /++,-- prefix
 cr30:
 %ai,n
 %abp,n
 %ab,n
-	IB1	A1
+	IB1	A1'
 	movB1	A1,R
 
+%adp,n
+%afp,n
 %a,n
-	I'	$2,A1
+	I'	$^,A1'
 	mov	A1,R
 
 %nbp*,n
@@ -115,9 +121,11 @@ cr30:
 	IB1	#1(R)
 	movB1	#1(R),R
 
+%ndp*,n
+%nfp*,n
 %n*,n
 	F*
-	I'	$2,#1(R)
+	I'	$^,#1(R)
 	mov	#1(R),R
 
 / ++,-- postfix
@@ -125,12 +133,21 @@ cr32:
 %ai,n
 %abp,n
 %ab,n
-	movB1	A1,R
+	movB1	A1',R
 	IB1	A1
 
+%adp,n
+%afp,n
 %a,n
-	mov	A1,R
-	I'	$2,A1
+	mov	A1',R
+	I'	$^,A1
+
+%ebp*,n
+%eb*,n
+%ei*,n
+	F1*
+	movB1	#1(R1),R
+	IB1	#1(R1)
 
 %nbp*,n
 %nb*,n
@@ -140,70 +157,27 @@ cr32:
 	IB1	#1(R)
 	movB1	(sp)+,R
 
+%edp*,n
+%efp*,n
+%e*,n
+	F1*
+	mov	#1(R1),R
+	I'	$^,#1(R1)
+
+%ndp*,n
+%nfp*,n
 %n*,n
 	F*
 	mov	#1(R),-(sp)
-	I'	$2,#1(R)
+	I'	$^,#1(R)
 	mov	(sp)+,R
-
-/ !
-cr34:
-%n,n
-	FC
-	beq	1f
-	clr	R
-	br	2f
-1:	mov	$1,R
-2:
-
-/ &unary
-cr35:
-%a,n
-	mov	$A1,R
-
-/ & unary of auto
-cr29:
-%e,n
-	mov	r5,R
-	add	Z,R
-
-/ *unary
-cr36:
-%abp*,n
-	F
-	movb	(R),R
-
-%a*,n
-	F
-	mov	(R),R
-
-%abp,n
-	movb	*A1,R
-
-%a,n
-	mov	*A1,R
-
-%nbp*,n
-	F*
-	movb	*#1(R),R
-
-%n*,n
-	F*
-	mov	*#1(R),R
-
-%nbp,n
-	H*
-	movb	~(R),R
-
-%n,n
-	H*
-	mov	~(R),R
 
 / - unary
 cr37:
 %n,n
+%nf,n
 	F
-	neg	R
+	negBF	R
 
 / ~
 cr38:
@@ -214,24 +188,85 @@ cr38:
 / =
 cr80:
 %a,n
+%ad,nf
 	S
 	movB1	R,A1
+
+%af,nf
+	S
+	movfo	R,A1
+
+%nd*,af
+	F*
+	S
+	movf	R,#1(R)
 
 %n*,a
 	F*
 	movB1	A2,#1(R)
 	movB1	#1(R),R
 
+%nf*,af
+	F*
+	S
+	movfo	R,#1(R)
+
 %n*,e
 	F*
 	S1
 	movB1	R1,#1(R)
-	mov	R1,R
+	movB1	R1,R
+
+%ed*,nf
+	S
+	F1*
+	movf	R,#1(R1)
+
+%ef*,nf
+	S
+	F1*
+	movfo	R,#1(R1)
 
 %n*,n
+%nd*,nf
 	FS*
 	S
 	movB1	R,*(sp)+
+
+%nf*,nf
+	FS*
+	S
+	movfo	R,*(sp)+
+
+%a,nf
+	S
+	movfi	R,R
+	movB1	R,A1
+
+%e*,nf
+	S
+	F1*
+	movfi	R,R
+	movB1	R,#1(R1)
+
+%n*,nf
+	FS*
+	S
+	movfi	R,R
+	movB1	R,*(sp)+
+
+/ ^ -- xor
+cr49:
+%n,e
+	F
+	S1
+	xor	R1,R
+
+%n,n
+	FS
+	S
+	xor	R,(sp)
+	mov	(sp)+,R
 
 / |
 cr48:
@@ -272,301 +307,402 @@ cr47:
 	com	(sp)
 	bic	(sp)+,R
 
-/ relationals
-cr60:
-%n,n
-	HC
-	I	2f
-	clr	R
-	br	1f
-2:	mov	$1,R
-1:
-
-/ >>, <<
+/ >>
 cr45:
-%a,aw
-	movB1	A1,I'
-	I	A2,lsh
-	movB1	I',R
-
-%n*,aw
-	F*
-	movB1	#1(R),I'
-	I	A2,lsh
-	movB1	I',R
-
-%n,aw
+%n,1
 	F
-	mov	R,I'
-	I	A2,lsh
-	mov	I',R
+	asr	R
 
-%a,nw*
-	S*
-	movB1	A1,(r4)
-	I	#2(R),lsh
-	mov	(r4),R
+%n,c
+	F
+	ash	$-C2,R
 
-%a,n
-	S
-	movB1	A1,I'
-	I	R,lsh
-	mov	I',R
+%n,e
+	F
+	S1
+	neg	R1
+	ash	R1,R
 
 %n,n
-	FS
-	S
-	mov	(sp)+,I'
-	I	R,lsh
-	mov	I',R
+	SS
+	neg	(sp)
+	F
+	ash	(sp)+,R
 
-/ +, -
-cr40:
+/ <<
+cr46:
+%n,1
+	F
+	asl	R
+
 %n,aw
 	F
-	I	A2,R
+	ash	A2,R
 
 %n,ew*
 	F
 	S1*
-	I	#2(R1),R
+	ash	#1(R1),R
 
 %n,e
 	F
 	S1
-	I	R1,R
-
-%n,nw*
-	SS*
-	F
-	I	*(sp)+,R
+	ash	R1,R
 
 %n,n
 	SS
 	F
-	I	(sp)+,R
+	ash	(sp)+,R
 
-/ *
+/ +, -
+cr40:
+%n,z
+	F
+
+%n,1
+	F
+	I'	R
+
+%n,aw
+%nf,ad
+	F
+	IBF	A2,R
+
+%n,ew*
+%nf,ed*
+	F
+	S1*
+	IBF	#2(R1),R
+
+%n,e
+%nf,ef
+	F
+	S1
+	IBF	R1,R
+
+%n,nw*
+%nf,nd*
+	SS*
+	F
+	IBF	*(sp)+,R
+
+%n,n
+%nf,nf
+	SS
+	F
+	IBF	(sp)+,R
+
+/ * -- R must be odd on integers
 cr42:
-%aw,a
-	mov	A1,(r4)+
-	movB2	A2,(r4)
-	mov	-(r4),R
-
-%n,a
+%n,aw
+%nf,ad
 	F
-	mov	R,(r4)+
-	movB2	A2,(r4)
-	mov	-(r4),R
+	mulBF	A2,R
+
+%n,ew*
+%nf,ed*
+	F
+	S1*
+	mulBF	#2(R1),R
 
 %n,e
+%nf,ef
 	F
 	S1
-	mov	R,(r4)+
-	mov	R1,(r4)
-	mov	-(r4),R
+	mulBF	R1,R
 
 %n,n
-	FS
-	S
-	mov	(sp)+,(r4)+
-	mov	R,(r4)
-	mov	-(r4),R
+%nf,nf
+	SS
+	F
+	mulBF	(sp)+,R
 
-/ /; mod
+/ / R must be odd on integers
 cr43:
-%a,a
-	movB1	A1,(r4)
-	movB2	A2,div
-	mov	I,R
-
-%a,n
-	S
-	movB1	A1,(r4)
-	mov	R,div
-	mov	I,R
-
-%n,a
+%n,aw
 	F
-	mov	R,(r4)
-	movB2	A2,div
-	mov	I,R
+	T
+	sxt	R-
+	div	A2,R-
+
+%n,ew*
+	F
+	T
+	sxt	R-
+	S1*
+	div	#2(R1),R-
 
 %n,e
 	F
+	T
+	sxt	R-
 	S1
-	mov	R,(r4)
-	mov	R1,div
-	mov	I,R
-
-%e,n
-	S
-	F1
-	mov	R1,(r4)
-	mov	R,div
-	mov	I,R
+	div	R1,R-
 
 %n,n
-	FS
-	S
-	mov	(sp)+,(r4)
-	mov	R,div
-	mov	I,R
+	SS
+	F
+	T
+	sxt	R-
+	div	(sp)+,R-
+
+%nf,ad
+	F
+	divf	A2,R
+
+%nf,ed*
+	F
+	S1*
+	divf	#2(R1),R
+
+%nf,ef
+	F
+	S1
+	divf	R1,R
+
+%nf,nf
+	SS
+	F
+	divf	(sp)+,R
 
 / =*
 cr72:
-%a,a
-	movB1	A1,(r4)
-	movB2	A2,mul
-	movB1	(r4),A1
-	mov	(r4),R
-
-%a,n
-	S
-	mov	R,(r4)+
-	movB1	A1,(r4)
-	mov	-(r4),R
+%a,aw
+%ad,ad
+	movB1	A1',R
+	mulBF	A2,R
 	movB1	R,A1
 
-%n*,a
-	F*
-	movB1	#1(R),(r4)
-	movB2	A2,mul
-	movB1	(r4),#1(R)
-	mov	(r4),R
+%af,nf
+	SS
+	movof	A1',R
+	mulf	(sp)+,R
+	movfo	R,A1
 
-%n*,e
-	F*
-	S1
-	movB1	#1(R),(r4)
-	mov	R1,mul
-	movB1	(r4),#1(R)
-	mov	(r4),R
+%a,ew*
+%ad,ed*
+	movB1	A1',R
+	S1*
+	mulBF	#2(R1),R
+	movB1	R,A1
 
-%e*,n
+%aw,n
+%ad,n
 	S
-	F1*
-	movB1	#1(R1),(r4)
-	mov	R,mul
-	movB1	(r4),#1(R1)
-	mov	(r4),R
+	mulBF	A1',R
+	movBF	R,A1
+
+%a,n
+	SS
+	movB1	A1',R
+	mulBF	(sp)+,R
+	movB1	R,A1
+
+%nw*,n
+%nd*,nf
+	FS*
+	S
+	mulBF	*(sp),R
+	movB1	R,*(sp)+
 
 %n*,n
 	FS*
-	S
-	movB1	*(sp),(r4)
-	mov	R,mul
-	movB1	(r4),*(sp)+
-	mov	(r4),R
+	SS
+	movB1	*2(sp),R
+	mul	(sp)+,R
+	movB1	R,*(sp)+
 
-/ =mod, =/
+%nf*,nf
+	FS*
+	movof	*(sp),R
+	movf	R,-(sp)
+	S
+	mulf	(sp)+,R
+	movfo	R,*(sp)+
+
+/ =/ ;  R must be odd on integers
 cr73:
-%a,a
-	movB1	A1,(r4)
-	movB2	A2,div
-	movB1	I,A1
-	mov	I,R
+%a,aw
+	movB1	A1',R
+	sxt	R-
+	divBF	A2,R-
+	movB1	R-,A1
 
 %a,n
-	S
-	movB1	A1,(r4)
-	mov	R,div
-	mov	I,R
-	movB1	R,A1
-
-%n*,a
-	F*
-	movB1	#1(R),(r4)
-	movB2	A2,div
-	movB1	I,#1(R)
-	mov	I,R
-
-%n*,e
-	F*
-	S1
-	movB1	#1(R),(r4)
-	mov	R1,div
-	movB1	I,#1(R)
-	mov	I,R
+	SS
+	movB1	A1',R
+	sxt	R-
+	div	(sp)+,R-
+	movB1	R-,A1
 
 %e*,n
-	S
+	SS
 	F1*
-	movB1	#1(R1),(r4)
-	mov	R,div
-	movB1	I,#1(R1)
-	mov	I,R
+	movB1	#1(R1),R
+	sxt	R-
+	div	(sp)+,R-
+	movB1	R-,#1(R1)
 
 %n*,n
 	FS*
-	S
-	movB1	*(sp),(r4)
-	mov	R,div
-	movB1	I,*(sp)+
-	mov	I,R
+	SS
+	movB1	*2(sp),R
+	sxt	R-
+	div	(sp)+,R-
+	movB1	R-,*(sp)+
 
-/ =|
+%ad,ad
+	movf	A1',R
+	divf	A2,R
+	movf	R,A1
+
+%ad,ef
+	movf	A1',R
+	S1
+	divf	R1,R
+	movf	R,A1
+
+%ad,nf
+	SS
+	movf	A1',R
+	divf	(sp)+,R
+	movf	R,A1
+
+%af,nf
+	SS
+	movof	A1',R
+	divf	(sp)+,R
+	movfo	R,A1
+
+%nd*,nf
+	FS*
+	SS
+	movf	*8(sp),R
+	divf	(sp)+,R
+	movf	R,*(sp)+
+
+%nf*,nf
+	FS*
+	SS
+	movof	*8(sp),R
+	divf	(sp)+,R
+	movfo	R,*(sp)+
+
+/ =mod; R must be odd on integers
+cr74:
+%a,aw
+	movB1	A1',R
+	sxt	R-
+	div	A2,R-
+	movB1	R,A1
+
+%a,n
+	SS
+	movB1	A1',R
+	sxt	R-
+	div	(sp)+,R-
+	movB1	R,A1
+
+%e*,n
+	SS
+	F1*
+	movB1	#1(R1),R
+	sxt	R-
+	div	(sp)+,R-
+	movB1	R,#1(R1)
+
+%n*,n
+	FS*
+	SS
+	movB1	*2(sp),R
+	sxt	R-
+	div	(sp)+,R-
+	mov	R,*(sp)+
+
+/ =| and =& ~
 cr78:
 %a,a
-	bisBE	A2,A1
+	IBE	A2,A1'
 	movB1	A1,R
 
 %a,n
 	S
-	bisB1	R,A1
+	IB1	R,A1'
 	movB1	A1,R
 
 %n*,a
 	F*
-	bisBE	A2,#1(R)
+	IBE	A2,#1(R)
 	movB1	#1(R),R
 
 %e*,n*
 	S*
 	F1*
-	bisBE	#1(R1),#2(R)
-	movB1	#2(R),R
+	IBE	#2(R),#1(R1)
+	movB1	#2(R1),R
 
 %e*,n
 	S
 	F1*
-	bisBE	R,#1(R1)
+	IBE	R,#1(R1)
 	movB1	#1(R1),R
 
 %n*,e*
 	F*
 	S1*
-	bisBE	#2(R1),#1(R)
+	IBE	#2(R1),#1(R)
 	movB1	#1(R),R
 
 %n*,e
 	F*
 	S1
-	bisBE	R1,#1(R)
+	IBE	R1,#1(R)
 	movB2	#1(R),R
 
 %n*,n*
 	FS*
 	S*
-	bisBE	#2(R),*(sp)
+	IBE	#2(R),*(sp)
 	movB2	*(sp)+,R
 
 %n*,n
 	FS*
 	S
-	bisBE	R,*(sp)
+	IBE	R,*(sp)
 	mov	*(sp)+,R
+
+/ =^ -- =xor
+cr79:
+%aw,n
+	S
+	xor	R,A1'
+	mov	A1,R
+
+%ab,n
+	SS
+	movb	A1',R
+	xor	R,(sp)
+	mov	(sp)+,R
+	movb	R,A1
+
+%n*,n
+	FS*
+	movB1	*(sp),-(sp)
+	S
+	xor	R,(sp)
+	movB1	(sp)+,R
+	movB1	R,*(sp)+
 
 / =&
 cr77:
 %a,c
-	bicB1	$!C2,A1
+	bicB1	$!C2,A1'
 	movB2	A1,R
 
 %a,n
 	S
 	com	R
-	bicB1	R,A1
+	bicB1	R,A1'
 	movB1	A1,R
 
 %e*,n
@@ -590,59 +726,62 @@ cr77:
 	bicB1	R,*(sp)
 	movB1	*(sp)+,R
 
-/ =>>, =<<
+/ =>>
 cr75:
-%a,aw
-	movB1	A1,I'
-	I	A2,lsh
-	movB1	I',A1
-	movB1	I',R
+%a,c
+	movB1	A1',R
+	ash	$-C2,R
+	movB1	R,A1
 
 %a,n
-	S
-	movB1	A1,I'
-	I	R,lsh
-	movB1	I',A1
-	movB1	I',R
-
-%n*,e
-	F*
-	S1
-	movB1	#1(R),I'
-	I	R1,lsh
-	movB1	I',#1(R)
-	movB1	I',R
-
-%e*,n
-	S
-	F1*
-	movB1	#1(R1),I'
-	I	R,lsh
-	movB	I',#1(R1)
-	movB1	I',R
+	SS
+	movB1	A1',R
+	neg	(sp)
+	ash	(sp)+,R
+	movB1	R,A1
 
 %n*,n
-	FS*
-	S
-	movB1	*(sp),I'
-	I	R,lsh
-	movB1	I',*(sp)+
-	movB1	I',R
+	SS
+	F1*
+	movB1	#1(R1),R
+	neg	(sp)
+	ash	(sp)+,R
+	movB1	R,#1(R1)
+
+/ =<<
+cr76:
+%a,aw
+	movB1	A1',R
+	ash	A2,R
+	movB1	R,A1
+
+%a,n
+	SS
+	movB1	A1',R
+	ash	(sp)+,R
+	movB1	R,A1
+
+%n*,n
+	SS
+	F1*
+	movB1	#1(R1),R
+	ash	(sp)+,R
+	movB1	R,#1(R1)
 
 / =+
 cr70:
 %aw,aw
-	I	A2,A1
+	I	A2,A1'
 	mov	A1,R
 
 %aw,nw*
 	S*
-	I	#2(R),A1
+	I	#2(R),A1'
 	mov	A1,R
 
 %aw,n
 	S
-	I	R,A1
+	I	R,A1'
 	mov	A1,R
 
 %ew*,nw*
@@ -651,18 +790,19 @@ cr70:
 	I	#2(R),#1(R1)
 	mov	#1(R1),R
 
-%a,nw*
-	S*
-	movB1	A1,R1
-	I	#2(R),R1
-	movB1	R1,#2(R)
-	mov	R1,R
 
 %a,n
-	S
-	movB1	A1,R1
-	I	R1,R
+%ad,nf
+	SS
+	movB1	A1',R
+	IBF	(sp)+,R
 	movB1	R,A1
+
+%af,nf
+	SS
+	movof	A1,R
+	IBF	(sp)+,R
+	movfo	R,A1
 
 %ew*,n
 	S
@@ -677,18 +817,40 @@ cr70:
 	mov	#1(R),R
 
 %n*,n
+%nd*,nf
 	SS
 	F*
 	movB1	#1(R),R1
-	I	(sp)+,R1
+	IBF	(sp)+,R1
 	movB1	R1,#1(R)
-	mov	R1,R
+	movBF	R1,R
 
-/ int -> int[]
-cr97:
+%nf*,nf
+	SS
+	F*
+	movof	#1(R),R1
+	IBF	(sp)+,R1
+	movfo	R1,#1(R)
+	movf	R1,R
+
+/ int -> float
+cr51:
+%aw,n
+	movif	A1,R
+
+%nw*,n
+	F*
+	movif	#1(R),R
+
 %n,n
 	F
-	asl	R
+	movif	R,R
+
+/ float, double -> int
+cr52:
+%nf,n
+	F
+	movfi	R,R
 
 .data
 .even

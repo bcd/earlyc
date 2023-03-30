@@ -1,251 +1,174 @@
-retseq()
-{
-	printf("jmp	retrn\n");
-}
+#
+/* C compiler
 
-decref(t)
-{
+Copyright 1972 Bell Telephone Laboratories, Inc. 
 
-	if ((t & 077770) == 0) {
+*/
+
+#include "c0h.c"
+
+decref(at)
+{
+	register t;
+
+	t = at;
+	if ((t & ~07) == 0) {
 		error("Illegal indirection");
 		return(t);
 	}
-	return((t>>2) & 077770 | t&07);
+	return((t>>2) & ~07 | t&07);
 }
 
 incref(t)
 {
-	return((t<<2)&077740 | (t&07) | 010);
+	return((t<<2)&~034 | (t&07) | PTR);
 }
 
-jumpc(tree, lbl, cond)
-int tree[];
+cbranch(tree, lbl, cond)
+struct tnode *tree;
 {
-	extern cctab, block, rcexpr;
-
-	rcexpr(block(1,easystmt()+103,tree,lbl,cond),cctab);
+	rcexpr(block(1,CBRANCH,tree,lbl,cond),cctab);
 }
 
 rcexpr(tree, table)
-int tree[], table;
+int table;
+struct tnode *tree;
 {
-	extern space, putwrd, putchar, line;
-	int c, sp[];
+	register c, *sp;
 
 	if (tree == 0)
 		return;
 	putchar('#');
-	c = space;
-	c =/ 2;		/* # addresses per word */
-	sp = 0;
-	putwrd(c);
-	putwrd(tree);
-	putwrd(table);
-	putwrd(line);
+	c = space-treebase;
+	sp = treebase;
+	putw(c, binbuf);
+	putw(tree, binbuf);
+	putw(table, binbuf);
+	putw(line, binbuf);
 	while(c--)
-		putwrd(*sp++);
+		putw(*sp++, binbuf);
 }
 
-jump(lab) {
-	extern printf;
-
-	printf("jmp\tl%d\n", lab);
+branch(lab) {
+	printf("jbr\tL%d\n", lab);
 }
 
 label(l) {
-	extern printf;
-
 	printf("L%d:", l);
 }
 
-setstk(a) {
-	extern printf, stack;
-	auto ts;
-
-	ts = a-stack;
-	stack = a;
-	switch(ts) {
-
-	case 0:
-		return;
-
-	case 0177776:	/* -2 */
-		printf("tst	-(sp)\n");
-		return;
-
-	case 0177774:	/* -4 */
-		printf("cmp	-(sp),-(sp)\n");
-		return;
-	}
-	printf("add	$%o,sp\n", ts);
-}
-
-plength(p)
-int p[];
+plength(ap)
+struct tname *ap;
 {
-	int t, l;
+	register t, l;
+	register struct tname *p;
 
-	if (((t=p[1])&077770) == 0)		/* not a reference */
+	p = ap;
+	if (((t=p->type)&~07) == 0)		/* not a reference */
 		return(1);
-	p[1] = decref(t);
+	p->type = decref(t);
 	l = length(p);
-	p[1] = t;
+	p->type = t;
 	return(l);
 }
 
-length(cs)
-int cs[];
+length(acs)
+struct tnode *acs;
 {
-	extern hshtab[];
-	int t;
+	register t, n;
+	register struct tnode *cs;
 
-	t = cs[1];
-	if ((t&030) == 030)		/* array */
+	cs = acs;
+	t = cs->type;
+	n = 1;
+	while ((t&030) == ARRAY) {
 		t = decref(t);
-	if (t>=010)
-		return(2);
+		n = dimtab[cs->ssp&0377];
+	}
+	if ((t&~07)==FUNC)
+		return(0);
+	if (t>=PTR)
+		return(2*n);
 	switch(t&07) {
 
-	case 0:		/* int */
-		return(2);
+	case INT:
+		return(2*n);
 
-	case 1:		/* char */
-		return(1);
+	case CHAR:
+		return(n);
 
-	case 2:		/* float */
-		return(4);
+	case FLOAT:
+		return(4*n);
 
-	case 3:		/* double */
-		return(8);
+	case DOUBLE:
+		return(8*n);
 
-	case 4:		/* structure */
-		if (cs>=hshtab)			/* in namelist */
-			return(cs[3]);
-		return(getlen(cs));
+	case STRUCT:
+		return(n * dimtab[cs->lenp&0377]);
 
-	case 5:
+	case RSTRUCT:
 		error("Bad structure");
 		return(0);
 	}
 	error("Compiler error (length)");
 }
 
-getlen(p)
-int p[];
-{
-	int p1[];
-
-	switch(*p) {
-
-	case 20:		/* name */
-		return(p[2]);
-
-	case 35:
-	case 29:		/* & */
-	case 36:		/* * */
-	case 100:		/* call */
-	case 41:		/* - */
-		return(getlen(p[3]));
-
-	case 40:		/* + */
-		p1 = p[4];
-		if ((p1[1]&07) == 04)
-			return(getlen(p1));
-		return(getlen(p[3]));
-	}
-	error("Unimplemented pointer conversion");
-	return(0);
-}
-
 rlength(cs)
-int cs[];
+struct tnode *cs;
 {
-	auto l;
+	register int l;
 
 	if (((l=length(cs))&01) != 0)
 		l++;
 	return(l);
 }
 
-tlength(cs)
-int cs[];
+simplegoto()
 {
-	int nel;
+	register struct hshtab *csp;
 
-	if ((nel = cs[8]) == 0)
-		nel = 1;
-	return(length(cs)*nel);
-}
-
-trlength(cs)
-int cs[];
-{
-	int l;
-
-	if (((l=tlength(cs))&01) != 0)
-		l++;
-	return(l);
-}
-
-printn(n,b) {
-	extern putchar;
-	auto a;
-
-	if(a=n/b) /* assignment, not test for equality */
-		printn(a, b); /* recursive */
-	putchar(n%b + '0');
-}
-
-printf(fmt,x1,x2,x3,x4,x5,x6,x7,x8,x9)
-char fmt[]; {
-	extern printn, putchar, namsiz, ncpw;
-	char s[];
-	auto adx[], x, c, i[];
-
-	adx = &x1; /* argument pointer */
-loop:
-	while((c = *fmt++) != '%') {
-		if(c == '\0')
-			return;
-		putchar(c);
-	}
-	x = *adx++;
-	switch (c = *fmt++) {
-
-	case 'd': /* decimal */
-	case 'o': /* octal */
-		if(x < 0) {
-			x = -x;
-			if(x<0)  {	/* - infinity */
-				if(c=='o')
-					printf("100000");
-				else
-					printf("-32767");
-				goto loop;
-			}
-			putchar('-');
+	if ((peeksym=symbol())==NAME && nextchar()==';') {
+		csp = csym;
+		if (csp->hclass==0 && csp->htype==0) {
+			csp->htype = ARRAY;
+			if (csp->hoffset==0)
+				csp->hoffset = isn++;
 		}
-		printn(x, c=='o'?8:10);
-		goto loop;
-
-	case 's': /* string */
-		s = x;
-		while(c = *s++)
-			putchar(c);
-		goto loop;
-
-	case 'p':
-		s = x;
-		putchar('_');
-		c = namsiz;
-		while(c--)
-			if (*s)
-				putchar((*s++)&0177);
-		goto loop;
+		if ((csp->hclass==0||csp->hclass==STATIC)
+		 &&  csp->htype==ARRAY) {
+			peeksym = -1;
+			return(csp->hoffset);
+		}
 	}
-	putchar('%');
-	fmt--;
-	adx--;
-	goto loop;
+	return(0);
 }
 
+nextchar()
+{
+	while (ctab[peekc]==SPACE)
+		peekc = getchar();
+	return(peekc);
+}
+
+chconbrk(l)
+{
+	if (l==0)
+		error("Break/continue error");
+}
+
+dogoto()
+{
+	register struct tnode *np;
+
+	*cp++ = tree();
+	build(STAR);
+	chkw(np = *--cp);
+	rcexpr(block(1,JUMP,0,0,np), regtab);
+}
+
+doret()
+{
+	if (nextchar() != ';')
+		rcexpr(block(1, RFORCE, 0, 0, tree()), regtab);
+	branch(retlab);
+}

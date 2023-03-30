@@ -1,4 +1,12 @@
-main() {
+int	nofloat;
+int	peekc;
+int	obuf[259];
+int	tabflg;
+int	labno	1;
+
+main(argc, argv)
+char **argv;
+{
 /*
 	A1 -> A
 	A2    B
@@ -30,23 +38,33 @@ main() {
 	*	+0100
 */
 
-	extern putchar,getc,peekc,printf,flag,flush;
-
 	auto c,snlflg,nlflg,t,smode,m,ssmode;
+	extern fin;
 
 	smode = nlflg = snlflg = ssmode = 0;
+	if (argc>1)
+		if ((fin = open(argv[1], 0)) < 0) {
+			putchar('?\n');
+			return;
+		}
+	obuf[0] = 1;
+	if (argc>2) 
+		if ((obuf[0] = creat(argv[2], 0666)) < 0) {
+			putchar('?\n');
+			return;
+		}
 loop:
 	c = getc();
-	if (c!='\n' & c!='\t') nlflg = 0;
-	if (ssmode!=0 & c!='%') {
+	if (c!='\n' && c!='\t') nlflg = 0;
+	if (ssmode!=0 && c!='%') {
 		ssmode = 0;
-		printf(".data\n1:<");
+		printf(".data\nL%d:<", labno++);
 	}
 	switch(c) {
 
 	case '\0':
 		printf(".text; 0\n");
-		flush();
+		fflush(obuf);
 		return;
 
 	case ':':
@@ -56,7 +74,7 @@ loop:
 		goto loop;
 
 	case 'A':
-		if ((c=getc())=='1' | c=='2') {
+		if ((c=getc())=='1' || c=='2') {
 			putchar(c+'A'-'1');
 			goto loop;
 		}
@@ -110,8 +128,8 @@ loop:
 		putchar('M');
 		goto loop;
 
-	case 'M':
-		putchar('N');
+	case 'V':
+		putchar('V');
 		snlflg++;
 		goto loop;
 
@@ -137,6 +155,10 @@ l1:
 
 		case '1':
 			t =+ 8;
+			goto l1;
+
+		case '2':
+			t =+ 16;
 			goto l1;
 		}
 		peekc = c;
@@ -170,7 +192,17 @@ loop1:
 			goto pf;
 		case 'z':
 			m = 4;
-			t = 0;
+			t = flag();
+			goto pf;
+
+		case 'r':
+			m = 9;
+			t = flag();
+			goto pf;
+
+		case '1':
+			m = 5;
+			t = flag();
 			goto pf;
 
 		case 'c':
@@ -194,7 +226,7 @@ pf:
 			goto loop1;
 
 		case '\n':
-			printf(";1f\n");
+			printf("\nL%d\n", labno);
 			ssmode = 1;
 			nlflg = 1;
 			smode = 1;
@@ -206,6 +238,10 @@ pf:
 	case '\t':
 		if (nlflg) {
 			nlflg = 0;
+			goto loop;
+		}
+		if (smode) {
+			tabflg++;
 			goto loop;
 		}
 		putchar('\t');
@@ -228,13 +264,17 @@ pf:
 		printf(">\n<");
 		nlflg = 1;
 		goto loop;
+
+	case 'X':
+	case 'Y':
+	case 'T':
+		snlflg++;
 	}
 	putchar(c);
 	goto loop;
 }
 
 getc() {
-	extern getchar, peekc, nofloat;
 	auto t, ifcnt;
 
 	ifcnt = 0;
@@ -256,14 +296,13 @@ gc:
 			if (t=='\n')
 				t = getc();
 	}
-	if (ifcnt & nofloat)
+	if (ifcnt && nofloat)
 		goto gc;
 	return(t);
 }
 
 flag() {
-	extern getc, peekc;
-	auto c, f;
+	register c, f;
 
 	f = 0;
 l1:
@@ -289,6 +328,10 @@ l1:
 		f = 5;
 		goto l1;
 
+	case 's':
+		f = 6;
+		goto l1;
+
 	case 'p':
 		f =+ 16;
 		goto l1;
@@ -297,61 +340,11 @@ l1:
 	return(f);
 }
 
-peekc 0;
-
-putchar(c) {
-	extern flush, oubuf, ouptr;
-	char ouptr[], oubuf[];
-	auto c1;
-
-	goto init;
-init:
-	ouptr = oubuf;
-	init = init1;
-init1:
-	if(c1 = c>>8) {
-		*ouptr++ = c1;
-		if(ouptr >= oubuf+512)
-			flush();
-	}
-	if(c =& 0377) {
-			*ouptr++ = c;
-		if(ouptr >= oubuf+512)
-			flush();
-	}
+putchar(c)
+{
+	if (tabflg) {
+		tabflg = 0;
+		printf(">;.byte %o;<", c+0200);
+	} else
+		putc(c, obuf);
 }
-
-flush() {
-	extern ouptr, oubuf, fout, write;
-	char ouptr[], oubuf[];
-
-	write(fout, oubuf, ouptr-oubuf);
-	ouptr = oubuf;
-}
-
-getcha() {
-	extern read, incnt, fin, inbuf, inptr;
-	char inbuf[], inptr[];
-
-	goto init;
-init:
-	inptr = inbuf;
-	init = init1;
-init1:
-	if(inptr >= inbuf+incnt) {
-		inptr = inbuf;
-		incnt = read(fin, inbuf, 512);
-		if(!incnt)
-			return('\0');
-	}
-	return(*inptr++);
-}
-
-inbuf[256];
-oubuf[256];
-inptr 0;
-incnt 0;
-ouptr 0;
-fin 0;
-fout 1;
-nofloat 0;

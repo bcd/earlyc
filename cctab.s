@@ -2,12 +2,10 @@
 
 .globl	_cctab
 
-_cctab=.;.+2
-	20.;	rest
-	21.;	rest
-	22.;	rest
-	30.;	rest
-	31.;	rest
+.data
+_cctab=.
+	106.;	cc60
+	28.;	rest
 	34.;	rest
 	35.;	rest
 	36.;	rest
@@ -16,10 +14,9 @@ _cctab=.;.+2
 	41.;	rest
 	42.;	rest
 	43.;	rest
-	44.;	rest
 	45.;	rest
 	46.;	rest
-	47.;	rest
+	47.;	cc47
 	48.;	rest
 	60.;	cc60
 	61.;	cc60
@@ -31,85 +28,125 @@ _cctab=.;.+2
 	67.;	cc60
 	68.;	cc60
 	69.;	cc60
-	70.;	rest
-	71.;	rest
 	72.;	rest
 	73.;	rest
-	74.;	rest
-	75.;	rest
-	76.;	rest
-	77.;	rest
-	78.;	rest
 	79.;	rest
-	80.;	rest
+	0
+.text
 
 / relationals
 cc60:
 %a,z
+%ad,zf
 	tstB1	A1
 
+%af,z
+	movof	A1,R
+
 %n*,z
+%nd*,zf
 	F*
 	tstB1	#1(R)
 
-%n,z
-	F
-	tst	R
+%nf*,z
+	F*
+	movof	#1(R),R
 
-%a,a
+%n,z
+%nf,zf
+	FC
+
+%aw,aw
+%ab,ab
 	cmpBE	A1,A2
 
-%n*,a
+%nw*,aw
+%nb*,ab
 	F*
 	cmpBE	#1(R),A2
 
-%n,a
+%n,aw
+%nf,ad
 	F
-	cmpB2	R,A2
+	V
+	cmpB2	A2,R
 
-%n*,e*
+%nw*,ew*
+%nb*,eb*
 	F*
 	S1*
 	cmpBE	#1(R),#2(R1)
 
-%n*,e
+%nw*,e
+%nd*,ef
 	F*
 	S1
 	cmpB1	#1(R),R1
 
-%n,e*
+%n,ew*
+%nf,ed*
 	F
 	S1*
-	cmpB2	R,#2(R1)
+	V
+	cmpB2	#2(R1),R
 
 %n,e
+%nf,ef
 	F
 	S1
-	cmp	R,R1
+	cmpBF	R,R1
 
-%n*,n*
+%nw*,nw*
+%nb*,nb*
 	FS*
 	S*
-	cmpBE	(sp)+,#2(R)
+	cmpBE	*(sp)+,#2(R)
 
-%n*,n
+%nw*,n
+%nd*,nf
 	FS*
 	S
 	cmpB1	*(sp)+,R
 
-%n,n*
+%n,nw*
 	FS
 	S*
-	cmpB2	(sp)+,#2(R)
+	cmp	(sp)+,#2(R)
+
+%n,n
+%nf,nf
+	SS
+	F
+	V
+	cmpBF	(sp)+,R
+
+/ & as in "if ((a&b) ==0)"
+cc47:
+%a,a
+	bitBE	A2,A1
+
+%n*,a
+	F*
+	bitBE	A2,#1(R)
+
+%n,a
+	F
+	bitB2	A2,R
+
+%n,e
+	F
+	S1
+	bit	R1,R
 
 %n,n
 	FS
 	S
-	cmp	(sp)+,R
+	bit	(sp)+,R
 
 / set codes right
 rest:
 %n,n
+%nf,nf
 	H
 
 .data

@@ -2,7 +2,8 @@
 
 .globl	_efftab
 
-_efftab=.;.+2
+.data
+_efftab=.
 	30.;	ci30
 	31.;	ci30
 	32.;	ci30	/ same as 30
@@ -12,9 +13,13 @@ _efftab=.;.+2
 	71.;	ci70	/ - like +
 	77.;	ci77
 	78.;	ci78
+	81.;	ci78
+	75.;	ci75
+	76.;	ci76
 	0
+.text
 
-/ ++ prefix
+/ ++,-- prefix, postfix
 ci30:
 %ai,n
 %abp,n
@@ -22,7 +27,9 @@ ci30:
 	IB1	A1
 
 %aip,n
-	I'	$2,A1
+%adp,n
+%afp,n
+	I'	$^,A1
 
 %nbp*,n
 %ni*,n
@@ -31,37 +38,45 @@ ci30:
 	IB1	#1(R)
 
 %nip*,n
+%ndp*,n
+%nfp*,n
 	F*
-	I'	$2,#1(R)
+	I'	$^,#1(R)
 
 / =
 ci80:
 %a,z
+%ad,zf
 	clrB1	A1
 
 %n*,z
+%nd*,zf
 	F*
 	clrB1	#1(R)
 
 %a,aw
-	movB1	A2,A1
+%ab,a
+	movBE	A2,A1
 
+%ab,n*
 %a,nw*
 	S*
-	movB1	#2(R),A1
+	movBE	#2(R),A1
 
 %a,n
 	S
 	movB1	R,A1
 
 %n*,aw
+%nb*,a
 	F*
-	movB1	A2,#1(R)
+	movBE	A2,#1(R)
 
 %n*,ew*
+%nb*,e*
 	F*
 	S1*
-	movB1	#2(R1),#1(R)
+	movBE	#2(R1),#1(R)
 
 %n*,e
 	F*
@@ -69,9 +84,10 @@ ci80:
 	movB1	R1,#1(R)
 
 %e*,nw*
+%eb*,n*
 	S*
 	F1*
-	movB1	#2(R),#1(R1)
+	movBE	#2(R),#1(R1)
 
 %e*,n
 	S
@@ -79,57 +95,58 @@ ci80:
 	movB1	R,#1(R1)
 
 %n*,nw*
+%nb*,n*
 	FS*
 	S*
-	movB1	#2(R),*(sp)+
+	movBE	#2(R),*(sp)+
 
 %n*,n
 	FS*
 	S
-	movB1	R,*(sp)+
+	movBE	R,*(sp)+
 
-/ =| i
+/ =| and =& ~
 ci78:
 %a,a
-	bisBE	A2,A1
+	IBE	A2,A1
 
 %a,n
 	S
-	bisB1	R,A1
+	IB1	R,A1
 
 %n*,a
 	F*
-	bisBE	A2,#1(R)
+	IBE	A2,#1(R)
 
 %e*,n*
 	S*
 	F1*
-	bisBE	#2(R),#1(R1)
+	IBE	#2(R),#1(R1)
 
 %e*,n
 	S
 	F1*
-	bisBE	R,#1(R1)
+	IBE	R,#1(R1)
 
 %n*,e*
 	F*
 	S1*
-	bisBE	#2(R1),#1(R)
+	IBE	#2(R1),#1(R)
 
 %n*,e
 	F*
 	S1
-	bisBE	R1,#1(R)
+	IBE	R1,#1(R)
 
 %n*,n*
 	FS*
 	S*
-	bisBE	#2(R),*(sp)+
+	IBE	#2(R),*(sp)+
 
 %n*,n
 	FS*
 	S
-	bisBE	R,*(sp)+
+	IBE	R,*(sp)+
 
 / =& i
 ci77:
@@ -141,15 +158,15 @@ ci77:
 	com	R
 	bicB1	R,A1
 
+%n*,c
+	F*
+	bicB1	$!C2,#1(R)
+
 %e*,n
 	S
 	F1*
 	com	R
 	bicB1	R,#1(R1)
-
-%n*,c
-	F*
-	bicB1	$!C2,#1(R)
 
 %n*,e
 	F*
@@ -165,6 +182,12 @@ ci77:
 
 / =+
 ci70:
+%n*,z
+%a,z
+
+%a,1
+	I'B1	A1
+
 %aw,aw
 	I	A2,A1
 
@@ -176,6 +199,10 @@ ci70:
 	S
 	I	R,A1
 
+%n*,1
+	F*
+	I'B1	#1(R)
+
 %ew*,nw*
 	S*
 	F1*
@@ -183,15 +210,15 @@ ci70:
 
 %a,nw*
 	S*
-	movB1	A1,R1
+	movB1	A1',R1
 	I	#2(R),R1
-	movB1	R1,#2(R)
+	movB1	R1,A1
 
 %a,n
 	S
-	movB1	A1,R1
-	I	R1,R
-	movB1	R,A1
+	movB1	A1',R1
+	I	R,R1
+	movB1	R1,A1
 
 %ew*,n
 	S
@@ -209,6 +236,43 @@ ci70:
 	movB1	#1(R),R1
 	I	(sp)+,R1
 	movB1	R1,#1(R)
+
+/ =>>
+ci75:
+%a,1
+	asrB1	A1
+
+%n*,1
+	F*
+	asrB1	#1(R)
+
+%r,c
+	ash	$-C2,A1
+
+%r,n
+	S
+	neg	R
+	ash	R,A1
+
+/ =<<
+ci76:
+%a,1
+	aslB1	A1
+
+%n*,1
+	F*
+	aslB1	#1(R)
+
+%r,aw
+	ash	A2,A1
+
+%r,nw*
+	S*
+	ash	#2(R),A1
+
+%r,n
+	S
+	ash	R,A1
 
 .data
 .even
