@@ -7,6 +7,11 @@ Copyright 1972 Bell Telephone Laboratories, Inc.
 
 #include "c0h.c"
 
+/* BCD: Parse an external definition.
+ * Calls decl1() to parse the declarator, and then either
+ * cfunc() for a function definition or cinit() for a data
+ * definition.  An "extern" will call neither and simply put
+ * the name into the symbol table. */
 extdef()
 {
 	register o, width;
@@ -16,14 +21,20 @@ extdef()
 
 	if(((o=symbol())==EOF) || o==SEMI)
 		return;
+	/* BCD: Default type is set to INT.  Default symbol table flag
+	 * is FNDEL, which means the symbol should be deleted from the
+	 * table when the current block goes out of scope. */
 	type = 0;
 	xdflg = FNDEL;
     xxx:
 	if (o==KEYW) {
 		if (cval==EXTERN) {
+			/* BCD: "extern foo;" is parsed the same as "foo;". */
 			o = symbol();
 			goto xxx;
 		}
+		/* BCD: Acceptable keywords here are all type-related
+		 * (int, char, float, double, and struct). */
 		if ((type=cval)>STRUCT)
 			goto syntax;	/* not type */
 		elsize = 0;
@@ -33,10 +44,14 @@ extdef()
 				blkhed();
 		}
 	} else {
+		/* BCD: Only other token acceptable here is a name.
+		 * Push it back until needed. */
 		if (o!=NAME)
 			goto syntax;
 		peeksym = o;
 	}
+
+	/* BCD: Now that 'type' is set, parse a list of declarators. */
 	do {
 		defsym = 0;
 		strflg = 1;
@@ -50,21 +65,34 @@ extdef()
 		xdflg = 0;
 		type = ds->type;
 		if ((type&030)==FUNC) {
+			/* BCD: Handle a function declaration.  The declarator "name()"
+			 * can be followed by a left brace (for compound statement)
+			 * or keyword (for single statement) to make it a definition.
+			 * Else, it remains undefined/external. */
 			if ((peeksym=symbol())==LBRACE || peeksym==KEYW)
 				cfunc(cs);
 			return;
 		}
+
+		/* BCD: Calculate total number of elements for arrays, including
+		 * multidimensional ones. */
 		nel = 1;
 		while ((ds->type&030)==ARRAY) {
 			nel = dimtab[ds->ssp&0377];
 			ds->type = decref(ds->type);
 		}
+
+		/* BCD: Calculate the (simple type) width.  For structures,
+		 * 'nel' will be the total length in bytes, and width is set to 0.
+		 * Note width is already guaranteed to be word-aligned, so the
+		 * division below will not truncate. */
 		width = length(ds);
 		if (ds->type==STRUCT) {
 			nel =* width/2;
 			width = 0;
 		}
 		ds->type = type;
+		/* BCD: Parse the rest of the data declaration */
 		cinit(cs, type, nel, width);
 	} while ((o=symbol())==COMMA);
 	if (o==SEMI)
@@ -84,6 +112,9 @@ char *cs;
 	savdimp = dimp;
 	printf(".text\n_%.8s:\n", cs);
 	declist(ARG);
+	/* BCD: regvar is the minimum register number reserved by the implementation.
+	 * r5 is the frame pointer, r6 the stack pointer, and r7 the program counter
+	 * on the PDP-11. */
 	regvar = 5;
 	retlab = isn++;
 	if ((peeksym = symbol()) != LBRACE)
@@ -98,12 +129,16 @@ char *cs;
 {
 	register o, ninit, width;
 
+	/* BCD: Emit a .comm statement to declare an uninitialized variable (BSS).
+	 * Note the '=' sign is not required in initializers yet. */
 	if ((width = awidth) == 0)
 		width = 2;
 	if ((peeksym=symbol())==COMMA || peeksym==SEMI) {
 		printf(".comm	_%.8s,%o\n", cs, (nel*width+1)&~01);
 		return;
 	}
+
+	/* BCD: Emit 1 or more initial values; require {} around struct/array initializers. */
 	ninit = 0;
 	printf(".data\n_%.8s=.\n", cs);
 	if ((o=symbol())==LBRACE) {
@@ -116,16 +151,20 @@ char *cs;
 		peeksym = o;
 		ninit = cinit1(cs, type, awidth, 0);
 	}
+	/* BCD: If fewer initializers are provided than the struct/array size, then pad rest. */
 	if (ninit<nel)
 		printf(".=.+%o\n", (nel-ninit)*width);
 	else
 		nel = ninit;
 	if (nel>1 && (type&030)!=ARRAY && (type&07)!=STRUCT)
 		error("Too many initializers");
+	/* BCD: Force padding to an even address, if the object has an odd size. */
 	if (((nel&width)&01) != 0)
 		printf(".even\n");
 }
 
+/* BCD: Emit assembler for a simple initializer.  Handle constant
+ * string, char, int, float, and double. */
 cinit1(cs, type, awidth, ninit)
 char *cs;
 {
@@ -187,6 +226,7 @@ bxdec()
 	error("Inconsistent external initialization");
 }
 
+/* BCD: Parse statement.  d is 1 when a function block is expected. */
 statement(d)
 {
 	register o, o1, o2;
@@ -199,12 +239,13 @@ stmt:
 	case EOF:
 		error("Unexpected EOF");
 	case SEMI:
-	case RBRACE:
+	case RBRACE: /* BCD: A stray right brace is just ignored, also see below */
 		return;
 
 	case LBRACE:
 		if (d) {
 			o2 = blkhed() - 4;
+			/* BCD: Call profiler if enabled */
 			if (proflg)
 				o = "jsr\tr5,mrsave;0f;%o\n.bss\n0:.=.+2\n.text\n";
 			else
@@ -224,6 +265,9 @@ stmt:
 		switch(cval) {
 
 		case GOTO:
+			/* BCD: If the argument is just a name/label, then use 'simplegoto' to
+			 * emit a jump to it.  Otherwise the argument can be any expression,
+			 * which is evaluated to an address... this is 'computed goto'. */
 			if (o1 = simplegoto())
 				branch(o1);
 			else 
@@ -237,6 +281,8 @@ stmt:
 		case IF:
 			np = pexpr();
 			o2 = 0;
+
+			/* BCD: Optimize certain if statements */
 			if ((o1=symbol())==KEYW) switch (cval) {
 			case GOTO:
 				if (o2=simplegoto())
@@ -264,8 +310,15 @@ stmt:
 			case CONTIN:
 				o2 = contlab;
 			simpif:
+				/* BCD: When the if statement is a simple jump, either by void return,
+				 * goto, break, or continue, just use 'cbranch' to evalate and
+				 * conditionally branch.  Notice the fallthrough... */
 				chconbrk(o2);
 				cbranch(np, o2, 1);
+
+				/* BCD: When the if statement is a computed goto or value return, the
+				 * code was already emitted above, and this does lookahead for an 'else'
+				 * block */
 			hardif:
 				if ((o=symbol())!=SEMI)
 					goto syntax;
@@ -274,6 +327,8 @@ stmt:
 				peeksym = o1;
 				return;
 			}
+
+			/* Handle if statements that are general statements */
 			peeksym = o1;
 			cbranch(np, o1=isn++, 0);
 			statement(0);
@@ -381,6 +436,9 @@ stmt:
 
 	case NAME:
 		if (nextchar()==':') {
+			/* BCD: Parse the label statement.  Note its symbol table entry is marked
+			 * as a static array, but its hoffset stores a label number.  The check for
+			 * RBRACE is weird. */
 			peekc = 0;
 			o1 = csym;
 			if (o1->hclass>0) {
@@ -463,6 +521,7 @@ forstmt()
 	return(0);
 }
 
+/* BCD: Read a parenthesized expression */
 pexpr()
 {
 	register o, t;
@@ -500,6 +559,7 @@ pswitch()
 		label(deflab);
 	}
 	wswp = swp;
+	/* BCD: switch also handled by C01 */
 	putw(wswp-swb, binbuf);
 	putw(deflab, binbuf);
 	putw(4, binbuf);	/* table 4 is switch */
@@ -537,6 +597,7 @@ blkhed()
 			continue;
 		/* check tagged structure */
 		if (cs->hclass>KEYWC && (cs->htype&07)==RSTRUCT) {
+			/* BCD: Detect references to struct */
 			cs->lenp = dimtab[cs->lenp&0377]->lenp;
 			cs->htype = cs->htype&~07 | STRUCT;
 		}
@@ -554,6 +615,7 @@ blkhed()
 blkend() {
 	register struct hshtab *cs;
 
+	/* BCD: Remove all local symbols from the hshtab.  (e.g. labels). */
 	for (cs=hshtab; cs<hshtab+hshsiz; cs++) {
 		if (cs->name[0]) {
 			if (cs->hclass==0)
@@ -570,12 +632,19 @@ errflush(ao)
 {
 	register o;
 
+	/* BCD: When an error occurs, skip all symbols until the next
+	 * semicolon or brace. */
 	o = ao;
 	while(o>RBRACE)	/* ; { } */
 		o = symbol();
 	peeksym  = o;
 }
 
+/* BCD: Parse a list of storage class/type keywords.  skwd below is either 0
+ * (for a top-level declaration, MOS (for a * struct definition, or ARG (for
+ * a function's argument list).  This is the 'default' storage class.
+ * Returns the total amount of space required for all declarations of this
+ * type (multiple declarators/names may follow). */
 declist(skwd)
 {
 	int o, elsize, ndec;
@@ -587,6 +656,9 @@ loop:
 	tkw = -1;
 	skw = skwd;
 	elsize = 0;
+	/* BCD: Parse all keywords of the type definition.  Note that storage classes
+	 * and type names can appear in either order.  skw will be set to the storage
+	 * keyword and tkw to the type keyword. */
 	while ((o=symbol())==KEYW) switch (cval) {
 	case AUTO:
 	case STATIC:
@@ -624,6 +696,7 @@ loop:
 	if (ndec==0)
 		return(offset);
 list:
+	/* BCD: Default storage class is AUTO; default type is INT */
 	if (tkw<0)
 		tkw = INT;
 	if (skw==0)
@@ -632,6 +705,8 @@ list:
 	goto loop;
 }
 
+/* BCD: Parse a structure declaration.  mosf is the 'middle of struct' flag;
+ * this is true when the declaration appears inside a struct definition. */
 strdec(tkwp, mosf)
 int *tkwp;
 {
@@ -656,6 +731,10 @@ int *tkwp;
 	}
 	mosflg = 0;
 	if (o != LBRACE) {
+		/* BCD: Handle 'struct foo' that isn't followed by a left brace,
+		 * i.e. it isn't defined the structure members.  The type is
+		 * RSTRUCT, for "reference to struct".  The tag must already be
+		 * defined. */
 		if (ssym==0) {
 		syntax:
 			decsyn(o);
@@ -671,6 +750,8 @@ int *tkwp;
 	} else {
 		ds = defsym;
 		mosflg = 0;
+		/* BCD: Parse all of the member declarations.  Align the
+		 * total to a word boundary.  Enter this size into 'dimtab'. */
 		elsize = declist(MOS);
 		if (elsize&01)
 			elsize++;

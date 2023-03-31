@@ -11,6 +11,15 @@
   parameters
 */
 
+/* BCD:
+ * Symbol names are 8 characters max.
+ * Character constants can hold 2 ASCII characters per word.
+ * 200 16-byte symbol table entries takes a whopping 3200 bytes.
+ * 500 words for expression trees (these are variable sized)
+ * 200 swtab entries at 4 bytes each (for building switch tables)
+ * 100 dimtab words to store dimensionality constants (for arrays)
+ */
+
 #define	ncps	8
 #define	hshsiz	200
 #define	cmsiz	40
@@ -55,6 +64,7 @@ struct tconst {
 	int	value;
 };
 
+/* BCD: Symbol table entry */
 struct hshtab {
 	char	hclass;
 	char	hflag;
@@ -69,6 +79,7 @@ struct swtab {
 	int	swval;
 };
 
+/* BCD: Global variables for pass 1. */
 char	cvtab[];
 int	opdope[];
 char	ctab[];
@@ -188,7 +199,7 @@ int	regvar;
 
 #define	QUEST	90
 #define	CALL	100
-#define	MCALL	101
+#define	MCALL	101 /* BCD: zero-argument call */
 #define	JUMP	102
 #define	CBRANCH	103
 #define	INIT	104

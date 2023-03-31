@@ -13,6 +13,8 @@
  * 0400-- is leaf of tree
  * *0XX000-- XX is priority of operator
  */
+/* BCD: The bit flags are the same as those defined in c0h.c and c1h.c.
+ * For some reason they never bothered to update the code here to use them. */
 int opdope[] {
 	000000,	/* EOF */
 	000000,	/* ; */

@@ -60,7 +60,9 @@ struct optab optab[] {
 	".end",	END,
 	0,	0};
 
+/* BCD: revbr equivalent to maprel in the compiler proper */
 char	revbr[] { JNE, JEQ, JGT, JLT, JGE, JLE, JHIS, JLOS, JHI, JLO };
+
 int	isn	20000;
 
 main(argc, argv)
@@ -99,24 +101,29 @@ char **argv;
 	lasta = firstr = lastr = sbrk(2);
 	maxiter = 0;
 	opsetup();
+
+	/* BCD: The main loop of C2:
+	 * Read each line of assembler source, parsing it to a "struct node" which identifies
+	 * it as a label or an operation (see table above), and add that onto the scan list.
+	 */
 	do {
 		isend = input();
 		movedat();
 		niter = 0;
 		do {
-			refcount();
+			refcount(); /* BCD: Link labels/instructions */
 			do {
-				iterate();
+				iterate(); /* BCD: Loop through core optimizations as long as they apply */
 				clearreg();
 				niter++;
 			} while (nchange);
 			comjump();
-			rmove();
+			rmove(); /* BCD: Delete redundant moves */
 		} while (nchange || jumpsw());
-		addsob();
-		output();
+		addsob(); /* BCD: check if SOB instruction can be inserted here */
+		output(); /* BCD: dump the instruction window */
 		if (niter > maxiter)
-			maxiter = niter;
+			maxiter = niter; /* BCD: diagnostic to count max # of iterations of the inner loop */
 		lasta = firstr;
 	} while (isend);
 	flush();
@@ -128,16 +135,16 @@ char **argv;
 		printf("%d jumps to .+2\n", njp1);
 		printf("%d redundant labels\n", nrlab);
 		printf("%d cross-jumps\n", nxjump);
-		printf("%d code motions\n", ncmot);
-		printf("%d branches reversed\n", nrevbr);
-		printf("%d redundant moves\n", redunm);
-		printf("%d simplified addresses\n", nsaddr);
-		printf("%d loops inverted\n", loopiv);
+		printf("%d code motions\n", ncmot); /* BCD: see codemove() */
+		printf("%d branches reversed\n", nrevbr); /* BCD: see jumpsw() */
+		printf("%d redundant moves\n", redunm); /* BCD: see rmove() */
+		printf("%d simplified addresses\n", nsaddr); /* BCD: see repladdr() */
+		printf("%d loops inverted\n", loopiv); /* BCD: see codemove() */
 		printf("%d redundant jumps\n", nredunj);
-		printf("%d common seqs before jmp's\n", ncomj);
+		printf("%d common seqs before jmp's\n", ncomj); /* BCD: see backjmp() */
 		printf("%d skips over jumps\n", nskip);
-		printf("%d sob's added\n", nsob);
-		printf("%d redundant tst's\n", nrtst);
+		printf("%d sob's added\n", nsob); /* BCD: replace with SOB instruction */
+		printf("%d redundant tst's\n", nrtst); /* BCD: see rmove() */
 		printf("%dK core\n", ((lastr+01777)>>10)&077);
 		flush();
 	}
@@ -154,6 +161,7 @@ input()
 		switch (op.op) {
 	
 		case LABEL:
+			/* BCD: Here it appears that sizeof() only accepts a variable and not a type */
 			p = alloc(sizeof first);
 			if (line[0] == 'L') {
 				p->combop = LABEL;
@@ -188,11 +196,17 @@ input()
 			break;
 
 		}
+
+		/* BCD: The next line is chained onto a linked list with previous nodes.
+		 * See 'first' and 'lastp'. */
 		p->forw = 0;
 		p->back = lastp;
 		lastp->forw = p;
 		lastp = p;
 		p->ref = 0;
+
+		/* BCD: EROU means ".globl" was seen, and that returns to the caller, so the
+		 * optimizer is working on one function at a time. */
 		if (op==EROU)
 			return(1);
 		if (op==END)
@@ -236,6 +250,7 @@ char *ap;
 	return(n);
 }
 
+/* BCD: Output all the instructions on the scan list. */
 output()
 {
 	register struct node *t;
@@ -375,6 +390,7 @@ oplook()
 	return(0);
 }
 
+/* BCD: Link instructions with a label operand and the labels themselves. */
 refcount()
 {
 	register struct node *p, *lp;
@@ -414,6 +430,10 @@ refcount()
 			decref(p);
 }
 
+/* BCD: Main optimization routine.  Called in a loop since one optimization may
+ * enable other one.  'nchange' is incremented anytime something changed,
+ * telling the caller to iterate() one more time afterwards.  Interestingly,
+ * there is no safety maximum here. */
 iterate()
 {
 	register struct node *p, *rp, *p1;
@@ -423,6 +443,7 @@ iterate()
 		if ((p->op==JBR||p->op==CBR||p->op==JSW) && p->ref) {
 			rp = nonlab(p->ref);
 			if (rp->op==JBR && rp->labno) {
+				/* BCD: Simplify branch to branch */
 				nbrbr++;
 				p->labno = rp->labno;
 				decref(p->ref);
@@ -432,6 +453,7 @@ iterate()
 			}
 		}
 		if (p->op==CBR && (p1 = p->forw)->op==JBR) {
+			/* BCD: Skip over jump */
 			rp = p->ref;
 			do
 				rp = rp->back;
@@ -448,6 +470,7 @@ iterate()
 			}
 		}
 		if (p->op==JBR || p->op==JMP) {
+			/* BCD: Remove unreachable instructions after jump */
 			while (p->forw && p->forw->op!=LABEL
 				&& p->forw->op!=EROU && p->forw->op!=END) {
 				nchange++;
@@ -460,6 +483,7 @@ iterate()
 			rp = p->forw;
 			while (rp && rp->op==LABEL) {
 				if (p->ref == rp) {
+					/* BCD: Also remove jump to self, which is a no-op. */
 					p->back->forw = p->forw;
 					p->forw->back = p->back;
 					p = p->back;
@@ -476,6 +500,7 @@ iterate()
 	}
 }
 
+/* BCD: Check for cross jumps (???) */
 xjump(ap)
 {
 	register int *p1, *p2, *p3;
@@ -550,7 +575,7 @@ struct node *ap;
 		if (p3->op==JBR || p3->op==JMP) {
 			if (p1==p3)
 				return(p1);
-			ncmot++;
+			ncmot++; /* BCD: Code motion */
 			nchange++;
 			p1->back->forw = p2;
 			p1->forw->back = p3;
@@ -597,7 +622,7 @@ ivloop:
 	decref(tl);
 	if (tl->refc<=0)
 		nrlab--;
-	loopiv++;
+	loopiv++; /* BCD: Loop inversion */
 	nchange++;
 	return(p3);
 }
@@ -624,6 +649,9 @@ struct node *ap1, *ap2;
 		while ((p1 = p1->back) && p1->op==LABEL);
 		p2 = p2->back;
 		if (equop(p1, p2)) {
+			/* BCD: common sequence before jmp.  My guess is this looks for
+			 * an insn that is executed on the true and false paths of a
+			 * conditional branch, and moves it before the branch unconditionally. */
 			p3 = insertl(p1);
 			p2->back->forw = p2->forw;
 			p2->forw->back = p2->back;

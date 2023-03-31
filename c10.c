@@ -9,10 +9,14 @@
 
 #include "c1h.c"
 
+/* BCD: maprel changes the operator from (A OP B) when switched to (B OP A).
+ * Thus, less than/greater than are swapped, but equal and not equal
+ * are left alone. */
 char	maprel[] {	EQUAL, NEQUAL, GREATEQ, GREAT, LESSEQ,
 			LESS, GREATQP, GREATP, LESSEQP, LESSP
 };
 
+/* BCD: notrel just negates a relational operator */
 char	notrel[] {	NEQUAL, EQUAL, GREAT, GREATEQ, LESS,
 			LESSEQ, GREATP, GREATQP, LESSP, LESSEQP
 };
@@ -32,7 +36,7 @@ struct table *tabtab[]
 
 int	nreg	3;
 int	isn	10000;
-int	namsiz	8;
+int	namsiz	8; /* BCD: not used anywhere, same as ncps in pass 1 */
 int	*treebase;
 struct tnode	*xdel[2];
 
@@ -52,6 +56,7 @@ char *argv[];
 		error("Missing temp file");
 		exit(1);
 	}
+	/* BCD: below, creat() had the mode argument added since V3 */
 	if ((fout = creat(argv[3], 0666)) < 0) {
 		error("Can't create %s", argv[3]);
 		exit(1);
@@ -62,8 +67,14 @@ char *argv[];
 		exit(1);
 	}
 	spacemax = &treespace[ossiz];
+	/* BCD: Read intermediate form from pass 1. */
 	while ((c=getc(ascbuf)) > 0) {
 		if(c=='#') {
+			/* BCD: Hash signals a tree to be evaluated.
+			 * tree is the tree itself
+			 * table dictates how to compile it.
+			 * line is for debugging.
+			 */
 			sp = treebase;
 			c = getw(binbuf);
 			tree = getw(binbuf);
@@ -75,11 +86,11 @@ char *argv[];
 				pswitch(treebase, sp, tree);
 			else {
 				spacep = sp;
-				tree = optim(tree);
+				tree = optim(tree); /* BCD: first optimize the tree */
 				nstack = 0;
-				rcexpr(tree, table, 0);
+				rcexpr(tree, table, 0); /* BCD: then evaluate it */
 			}
-		} else
+		} else /* BCD: Any other char is emitted as-is to assembler. */
 			putchar(c);
 	}
 	if (nfloat)
@@ -114,6 +125,15 @@ struct table *table;
 		t2 = p2->type;
 		d2 = dcalc(p2, nrleft);
 	}
+	/* BCD: First scan the table for the matching opcode; then scan all
+	 * entries in the subtable (tabp) sequentially, looking for the first
+	 * match.  The match criteria is given by 4 chars, 2 describing the
+	 * left operand and 2 for the right (if BINARY).  The structure for
+	 * each is similar.  One byte stores the maximum degree of difficulty;
+	 * if this is exceeded, then matching fails.  The other, tabtypN,
+	 * is passed with the subtree to notcompat(), which if true will also
+	 * fail to match.
+	 */
 	for (; table->op!=op; table++)
 		if (table->op==0)
 			return(0);
@@ -136,18 +156,39 @@ struct table *table;
 	return(0);
 }
 
+/* BCD: The entry point into the real code generator.
+ * atree - tree expression to be evaluated
+ * atable - this controls how code is emitted:
+ *    regtab - most applicable, puts its result in a register
+ *    cctab - used only to set the condition codes.  Used when the
+ *       expression is inside a conditional statement (if/while/etc.)
+ *    sptab - emit result onto the stack.  Note: this may be PDP-11 specific.
+ *       Some architectures do not permit writing a value directly to stack
+ *       without need of a register.
+ *    efftab - evaluate for side effects only; used for expression statements.
+ * reg - regno where the result should be placed.
+ *
+ * Returns the register number where the result was actually placed.
+ * Note, many calls to rcexpr() do not check the return value.
+ */
 rcexpr(atree, atable, reg)
 struct tnode *atree;
 struct table *atable;
 {
 	register r;
 	int modf, nargs;
+	/* BCD: Note that 'atree' and 'atable' are on the stack, so register
+	 * values are declared here since they are frequently used.  This is
+	 * not automatically done for you. */
 	register struct tnode *tree;
 	register struct table *table;
 
 	table = atable;
 	if((tree=atree)==0)
 		return(0);
+
+	/* BCD: The easier cases are checked first, which don't involve
+	 * arithmetic/logical operations. */
 	switch (tree->op)  {
 
 	case SETREG:
@@ -168,6 +209,7 @@ struct table *atable;
 		return(0);
 
 	case EXCLA:
+		/* BCD: Move the negation of !(A OP B) into OP. */
 		if ((opdope[tree->tr1->op] & RELAT) != 0) {
 			tree = tree->tr1;
 			tree->op = notrel[tree->op - EQUAL];
@@ -175,16 +217,23 @@ struct table *atable;
 		break;
 
 	case RFORCE:
+		/* BCD: RFORCE just forces its operand into R0.  Used for return
+		 * values and the switch statement operand, since those are
+		 * implemented by some hardcoded assembler (see 'pswitch'). */
 		if((r=rcexpr(tree->tr1, table, reg)) != 0)
 			printf("mov%c	r%d,r0\n", isfloat(tree->tr1), r);
 		return(0);
 
 	case COMMA:
+		/* BCD: Evaluate the first operand of comma for side-effects, then proceed
+		 * with just operand 2 */
 		rcexpr(tree->tr1, efftab, reg);
 		tree = tree->tr2;
 		break;
 
 	case CALL:
+		/* BCD: CALL tree is used in pass 1.  This is converted to CALL1 (for
+		 * externs) or CALL2 (for well known functions) for pass 2. */
 		r = 0;
 		nargs = 0;
 		modf = 0;
@@ -192,6 +241,11 @@ struct table *atable;
 			nargs++;
 			nstack++;
 		}
+		/* BCD: The argument(s) to a function call are the same as a comma
+		 * expression, evaluated right to left.  Each argument is pushed
+		 * onto the stack via comarg().  Then the call itself is emitted
+		 * with a recursive call to cexpr().  Last, popstk() is used to
+		 * clear the stack arguments. */
 		tree = tree->tr2;
 		if(tree->op) {
 			while (tree->op==COMMA) {
@@ -212,6 +266,8 @@ struct table *atable;
 		if (table==efftab || table==regtab)
 			return(0);
 		r = 0;
+
+		/* BCD: For cctab, 'fixup' will emit the 'tst' instruction afterwards */
 		xdel[0] = 0;
 		xdel[1] = 0;
 		goto fixup;
@@ -220,8 +276,14 @@ struct table *atable;
 	case DIVIDE:
 	case ASTIMES:
 	case ASDIV:
+		/* BCD: Convert multiply/divide of powers of 2 to shifts. */
 		pow2(tree);
 	}
+
+	/* BCD: From the Tour:
+	 * rcexpr itself picks off some special cases, then calls cexpr to do the real work.
+	 * The table scanning really starts here.  reorder() does some specific optimizations. */
+
 	modf = 100;
 	tree = reorder(tree, reg, &modf, 0);
 	if (modf!=100)
@@ -230,11 +292,16 @@ struct table *atable;
 		return(reg);
 	if ((r=cexpr(tree, table, reg))>=0)
 		return(r);
+
+	/* BCD: If table is not regtab, and it couldn't be evaluated, then
+	 * fall back to regtab and try again...  */
 	if (table!=regtab)  {
 		if((r=cexpr(tree, regtab, reg))>=0) {
 	fixup:
+		/* BCD: If that succeeded, need to fixup the result. */
 			modf = isfloat(tree);
 			if (table==sptab || table==lsptab) {
+				/* BCD: For sptab, push register onto stack */
 				printf("mov%c	r%d,%c(sp)\n", modf, r,
 					table==sptab? '-':0);
 				nstack++;
@@ -248,7 +315,7 @@ struct table *atable;
 			}
 			if (atree)
 				rcexpr(atree, efftab, 0);
-			if (table==cctab)
+			if (table==cctab) /* BCD: For cctab, emit tst instruction */
 				printf("tst%c	r%d\n", modf, r);
 			return(r);
 		}
@@ -258,7 +325,13 @@ struct table *atable;
 }
 struct table *cregtab;
 
-cexpr(atree, table, areg)
+/* BCD: From the Tour:
+ * cexpr tries to find an entry applicable to the given tree in the given table, and
+ * returns -1 if no such entry is found, letting rcexpr try again with a different
+ * table.  A successful match yields a string containing both literal characters
+ * which are written out and pseudo-operations, or macros, which are expanded.
+ * BCD: The return value when matching returns a register number >=0. */
+cexpr(atree, table, areg) /* BCD: areg short for "argument register" */
 struct tnode *atree;
 struct table *table;
 {
@@ -278,6 +351,11 @@ struct table *table;
 	p1 = tree->tr2;
 	c = tree->op;
 	opd = opdope[c];
+
+	/* BCD: Some special cases first, where the emitted code requires some conditional
+	 * branch statements.  When a conditional must be converted into a value, 0 or 1,
+	 * use predeclared tree nodes that store those. */
+
 	if ((opd&RELAT||c==LOGAND||c==LOGOR||c==EXCLA) && table!=cctab) {
 		cbranch(tree, c=isn++, 1, reg);
 		rcexpr(&czero, table, reg);
@@ -297,6 +375,8 @@ struct table *table;
 		branch(r=isn++, 0);
 		label(c);
 		reg = rcexpr(p1->tr2, table, rreg);
+		/* BCD: Below, new from V3->V5: rcexpr may return in a different reg
+		 * than requested, so check for that. */
 		if (rreg!=reg)
 			printf("mov%c	r%d,r%d\n",
 			    isfloat(tree),reg,rreg);
@@ -311,6 +391,14 @@ struct table *table;
 	r = 0;
 	if (table==cctab || table==cregtab)
 		r++;
+
+	/* BCD: From the Tour:
+	 * Only three features of the operands are used in deciding whether a match has
+	 * occurred.  They are: 1. Is the type of the operand compatible with that demanded?
+	 * 2. Is the `degree of difficulty' (in a sense described below) compatible?
+	 * 3. The table may demand that the operand have a `*' (indirection operator) as its
+	 * highest operator. */
+
 	for (;;) {
 		flag = 0;
 		if ((opd & LEAF) == 0)
@@ -328,11 +416,15 @@ struct table *table;
 			goto retrn;
 		tree = optim(tree);
 	}
+
 	if ((tree->op==PLUS||tree->op==ASPLUS) &&
 	    p2->op == CON && p2->value == -1) {
 		p2->value = 1;
 		tree->op++;		/* +, =+ to -, =- */
 	}
+
+	/* BCD: Call match() to find the first option that matches the tree.
+	 */
 	if (table==cregtab)
 		table = regtab;
 	if (table!=cctab || c==INCAFT || c==DECAFT
@@ -340,11 +432,16 @@ struct table *table;
 		if ((opt=match(tree, table, nreg-reg))==0) {
 			xdel[0] = del[0];
 			xdel[1] = del[1];
-			return(-1);
+			return(-1); /* BCD: no match found */
 		}
+
+	/* BCD: If a match is found, perform the expansion indicated by
+	 * tabstring. */
 	string = opt->tabstring;
 loop:
 	if ((c = *string++) & 0200) {
+		/* BCD: when bit 8 of a 7-bit ASCII character is set, use that
+		 * to insert a tab onto the output. */
 		c =& 0177;
 		putchar('\t');
 	}
@@ -352,6 +449,7 @@ loop:
 
 	case '\0':
 	retrn:
+		/* BCD: Evaluate any delayed expressions that were generated here. */
 		if (del[0])
 			rcexpr(del[0], efftab, 0);
 		if (del[1])
@@ -359,7 +457,11 @@ loop:
 		if (!isfloat(tree))
 			if (tree->op==DIVIDE || tree->op==ASDIV)
 				reg--;
-		return(reg);
+		return(reg); /* BCD: success! */
+
+	/* BCD: The values in the comments are what you put into the .s table files.
+	 * The cvopt program then converts these into a more compact form, using the
+	 * codes that are in the case statements.  This situation existed even in V2. */
 
 	/* A1 */
 	case 'A':
@@ -380,7 +482,7 @@ loop:
 			c++;
 			string++;
 		}
-		pname(p, c);
+		pname(p, c); /* BCD: print operand (either tree, or its left/right operands */
 		goto loop;
 
 	/* I */
@@ -389,7 +491,7 @@ loop:
 			string++;
 		else
 			c = 0;
-		prins(tree->op, c);
+		prins(tree->op, c); /* BCD: print operation mnemonic from tree op */
 		goto loop;
 
 	/* B1 */
@@ -426,13 +528,13 @@ loop:
 	/* C1 */
 	case 'E':
 		p = p1->tr1;
-		goto const;
+		goto Yconst;
 
 	/* C2 */
 	case 'F':
 		p = p2->tr1;
-	const:
-		printf("%o", p);
+	Yconst:
+		printf("%o", p); /* BCD: print octal constant in left/right operand */
 		goto loop;
 
 	/* F */
@@ -499,16 +601,16 @@ loop:
 		goto loop;
 
 	/* R */
-	case 'I':
+	case 'I': /* BCD: use "reg" */
 		r = reg;
 		if (*string=='-') {
 			string++;
-			r--;
+			r--; /* BCD: R- will allocate two registers for multiply/divide */
 		}
 		goto preg;
 
 	/* R1 */
-	case 'J':
+	case 'J': /* BCD: use "reg1" computed earlier from F/S/H macro */
 		r = reg1;
 	preg:
 		if (r>nreg)
@@ -532,12 +634,12 @@ loop:
 		goto loop;
 
 	/* #1 */
-	case '#':
+	case '#': /* BCD: generic argument 1, could be many things */
 		p = p1->tr1;
 		goto nmbr;
 
 	/* #2 */
-	case '"':
+	case '"': /* BCD: generic argument 2 */
 		p = p2->tr1;
 
 	nmbr:
@@ -555,7 +657,7 @@ loop:
 		goto loop;
 
 	/* V */
-	case 'V':
+	case 'V': /* BCD: change relational op when order of operands is swapped (cctab) */
 		tree->op = maprel[tree->op - EQUAL];
 		goto loop;
 
@@ -572,6 +674,20 @@ loop:
 	goto loop;
 }
 
+/* BCD: From the Tour:
+ * Reordering is a ... sort of optimization.
+ * Many cases which it detects are useful mainly with
+ * register variables.
+ *
+ * The first idea is when compiling "r = x+y", where r is a 
+ * register target, this can be rewritten as "r=x; r += y"
+ * to avoid a move instruction into r at the end.
+ *
+ * The second idea is similar for register targets inside
+ * subexpressions.
+ *
+ * There is a third idea here as well, TODO.
+ */
 reorder(ap, reg, afp, delp)
 struct tnode *ap;
 int *afp, *delp;
@@ -624,6 +740,7 @@ int *afp, *delp;
 				 || p1->tr1->nloc!=p->tr1->nloc)
 					rcexpr(p, efftab, reg);
 				p->tr2 = p1->tr2;
+				/* BCD: Convert x=x OP y to x OP= y. */
 				p->op = p1->op + ASPLUS - PLUS;
 				(*fp) = 2;
 				return(p);
@@ -689,6 +806,7 @@ int *flagp;
 
 	pmp = 0;
 	tree = reorder(atree, 0, &rathole, &pmp);
+	/* BCD: structs can't be passed on the stack yet */
 	if (tree->type==STRUCT)
 		error("Illegal structure");
 	if (nstack || isfloat(tree)) {

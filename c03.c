@@ -7,10 +7,12 @@ Copyright 1972 Bell Telephone Laboratories, Inc.
 
 #include "c0h.c"
 
+/* BCD: Remove one level of indirection from a pointer type */
 decref(at)
 {
 	register t;
 
+	/* Error if PTR, FUNC, or ARRAY type */
 	t = at;
 	if ((t & ~07) == 0) {
 		error("Illegal indirection");
@@ -19,17 +21,24 @@ decref(at)
 	return((t>>2) & ~07 | t&07);
 }
 
+/* BCD: Add one level of indirection to a (now) pointer type */
 incref(t)
 {
 	return((t<<2)&~034 | (t&07) | PTR);
 }
 
+/* BCD: Create and evaluate a conditional branch tree node */
 cbranch(tree, lbl, cond)
 struct tnode *tree;
 {
 	rcexpr(block(1,CBRANCH,tree,lbl,cond),cctab);
 }
 
+/* BCD: The frontend (C01) rcexpr writes the tree onto intermediate
+ * output for processing by the second pass (C02).  The two passes
+ * both have 'rcexpr' with the same inputs, suggesting that the two
+ * could be combined here.  In pass 1, there is no return value; this
+ * cannot fail.  (In pass 2, it returns a register number.) */
 rcexpr(tree, table)
 int table;
 struct tnode *tree;
@@ -57,6 +66,7 @@ label(l) {
 	printf("L%d:", l);
 }
 
+/* BCD: Return the length of the object pointed to by ap. */
 plength(ap)
 struct tname *ap;
 {
@@ -72,6 +82,8 @@ struct tname *ap;
 	return(l);
 }
 
+/* BCD: Return the length of an object in bytes.  acs is the
+ * symbol table entry pointer. */
 length(acs)
 struct tnode *acs;
 {
@@ -80,11 +92,15 @@ struct tnode *acs;
 
 	cs = acs;
 	t = cs->type;
+
+	/* BCD: Count the number of subobjects.  Default is 1 for non-arrays. */
 	n = 1;
 	while ((t&030) == ARRAY) {
 		t = decref(t);
 		n = dimtab[cs->ssp&0377];
 	}
+	/* BCD: Array names 'decay' here and are treated just like pointers.
+	 * They are 2 bytes on the PDP-11. */
 	if ((t&~07)==FUNC)
 		return(0);
 	if (t>=PTR)

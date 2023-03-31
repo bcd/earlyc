@@ -7,6 +7,10 @@ Copyright 1972 Bell Telephone Laboratories, Inc.
 
 #include "c0h.c"
 
+/* BCD: Updates the expression stack, pointed to by 'cp', when an
+ * operator is seen.  This applies precedence rules to either push
+ * the operator, or pop the stack args and apply it.  This also does
+ * some checks for illegal constructs. */
 build(op) {
 	register int t1;
 	int t2, t3, t;
@@ -18,12 +22,17 @@ build(op) {
 		build(PLUS);
 		op = STAR;
 	}
+
+	/* BCD: Load arguments from stack (p1 only if unary; include p2 if binary. */
 	dope = opdope[op];
 	if ((dope&BINARY)!=0) {
 		p2 = chkfun(disarray(*--cp));
 		t2 = p2->type;
 	}
 	p1 = *--cp;
+
+	/* BCD: sizeof X is modified to a constant reflecting X's length in bytes.
+	 * Not present in v3. */
 	if (op==SIZEOF) {
 		t1 = length(p1);
 		p1->op = CON;
@@ -42,6 +51,9 @@ build(op) {
 	pcvn = 0;
 	switch (op) {
 
+	/* BCD: COLON in v3 required its two arguments to have the same type.
+	 * This has been relaxed; see further below. */
+
 	/* end of expression */
 	case 0:
 		*cp++ = p1;
@@ -55,6 +67,11 @@ build(op) {
 		return;
 
 	case QUEST:
+		/* BCD: The ternary operator, which logically has three operands, is
+		 * stored in normal trees that only have two subtrees.  The QUEST
+		 * tree appears at the root; its left subtree is the test expression,
+		 * and its right subtree must be a COLON node, which has the true/false
+		 * expressions as its children. */
 		if (p2->op!=COLON)
 			error("Illegal conditional");
 		t = t2;
@@ -67,6 +84,7 @@ build(op) {
 		return;
 
 	case STAR:
+		/* BCD: Replace *&x with x */
 		if (p1->op==AMPER ) {
 			*cp++ = p1->tr1;
 			return;
@@ -99,6 +117,7 @@ build(op) {
 		return;
 
 	case ARROW:
+		/* BCD: X->Y is essentially turned into *(&X+off) */
 		*cp++ = p1;
 		chkw(p1);
 		p1->type = PTR+STRUCT;
@@ -128,11 +147,17 @@ build(op) {
 		chkw(p1);
 	if ((dope&RWORD)!=0)
 		chkw(p2);
+
+	/* BCD: Handle unary operators.  First try to fold at compile-time;
+	 * else push a tree node for the operator */
 	if ((dope&BINARY)==0) {
 		if (!fold(op, p1, 0))
 			*cp++ = block(1,op,t1,p1->dimp,p1);
 		return;
 	}
+
+	/* BCD: From here on, it's a BINARY operation */
+
 	if (t2==7) {
 		t = t1;
 		p2->type = 0;	/* no int cv for struct */
@@ -189,9 +214,13 @@ nocv:;	}
 			op =+ 4;	  /* ptr relation */
 		t = 0;		/* relational is integer */
 	}
+
+	/* BCD: Like above, fold at compile-time if possible; else push
+	 * an operator tree node. */
 	if (fold(op, p1, p2))
 		return;
 	*cp++ = block(2,op,t,(p1->dimp==0? p2:p1)->dimp,p1,p2);
+
 	if (pcvn) {
 		p1 = *--cp;
 		*cp++ = convert(p1, 0, pcvn, plength(p1->tr1));
@@ -205,6 +234,9 @@ struct tnode *p;
 
 	switch(cvn) {
 
+	/* BCD: Integer/pointer conversion: scale by the length of the pointed-to
+	 * object. */
+
 	/* int -> ptr */
 	case 1:
 		n = TIMES;
@@ -215,6 +247,8 @@ struct tnode *p;
 		n = DIVIDE;
 	md:
 		return(block(2, n, t, 0, p, block(1, CON, 0, 0, len)));
+
+	/* BCD: Insert integer/float conversion operator */
 
 	/* int -> double */
 	case 3:
@@ -328,6 +362,9 @@ error(s, p1, p2, p3, p4, p5, p6)
 	fout = f;
 }
 
+/* BCD: Allocates a tree node.  See c12.c for version in pass 2.  They
+ * work basically the same way.  space points to the first word of free
+ * space. */
 block(n, op, t, d, p1,p2,p3)
 int *p1, *p2, *p3;
 {
@@ -361,6 +398,7 @@ struct tnode *ap;
 		error("Lvalue required");
 }
 
+/* BCD: Note: very similar to 'const' in c12.c */
 fold(op, ap1, ap2)
 struct tnode *ap1, *ap2;
 {

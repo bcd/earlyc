@@ -108,6 +108,7 @@ rmove()
 		repladdr(p, 0, flt);
 		source(regs[RT1]);
 		if (equstr(regs[RT1], ccloc)) {
+			/* BCD: Remove redundant TST */
 			p->back->forw = p->forw;
 			p->forw->back = p->back;
 			p = p->back;
@@ -156,6 +157,7 @@ jumpsw()
 		p1 = p->forw;
 		if (p->op == CBR && p1->op==JBR && p->ref && p1->ref
 		 && abs(p->refc - p->ref->refc) > abs(p1->refc - p1->ref->refc)) {
+		 	/* BCD: Reverse a branch, if...? */
 			p->subop = revbr[p->subop];
 			t = p1->ref;
 			p1->ref = p->ref;
@@ -170,6 +172,8 @@ jumpsw()
 	return(nj);
 }
 
+/* BCD: Convert decrement followed by branch into single SOB instruction
+ * (Subtract One and Branch). */
 addsob()
 {
 	register struct node *p, *p1;
@@ -249,6 +253,15 @@ alloc(an)
 	n = an;
 	n++;
 	n =& ~01;
+	/* BCD: A more modern approach to memory allocation than the earlier
+	 * passes.  When there is not enough space on the heap (lasta points
+	 * to the current top of heap, and lastr points to its limit), then
+	 * call the OS 'sbrk' to expand it by another 2000 bytes.  (Why not
+	 * a power of 2 here?)  The program just fails if it runs out of
+	 * space, so this puts a limit on function size, however it is 
+	 * probably reasonable.  One could imagine just not optimizing it
+	 * fully, by outputting some of the earlier instructions - this might
+	 * complicate the control flow of the optimizer though. */
 	if (lasta+n >= lastr) {
 		if (sbrk(2000) == -1) {
 			write(2, "Out of space\n", 14);
@@ -261,6 +274,7 @@ alloc(an)
 	return(p);
 }
 
+/* BCD: Clears register usage data, anytime the instruction stream changes. */
 clearreg()
 {
 	register int i;
@@ -356,6 +370,8 @@ char *as;
 	return(-1);
 }
 
+/* BCD: Return register number for an assembler string; i.e. asreg("r1") -> 1.
+ * Returns -1 if not a valid register. */
 isreg(as)
 char *as;
 {
@@ -442,6 +458,8 @@ struct node *p;
 	}
 }
 
+/* BCD: Move .data statements off the main scan list, since they do not
+ * participate in the optimization at all. */
 movedat()
 {
 	register struct node *p1, *p2;
@@ -613,6 +631,7 @@ char *ar1, *ar2;
 	while (*p++ = *cv++);
 }
 
+/* BCD: Returns true if two strings are equal. */
 equstr(ap1, ap2)
 char *ap1, *ap2;
 {

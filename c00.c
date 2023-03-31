@@ -7,6 +7,8 @@ Copyright 1972 Bell Telephone Laboratories, Inc.
 
 #include "c0h.c"
 
+/* BCD: 'isn' is the ID of the next auto-gen label (e.g. L1: etc.)
+ * No check for overflow on 'line', it's not gonna happen. */
 int	isn 1;
 int	peeksym -1;
 int	line 1;
@@ -47,6 +49,16 @@ main(argc, argv)
 char *argv[];
 {
 	extern fin, fout;
+	/* BCD: In v5, space for trees is allocated on the stack of main; this indicates a
+	 * machine with a decent amount of memory.  In v3, tree space was initialized
+	 * to 0, which overwrote the beginning of the program, an 'init' function.
+	 * v2 did the same overwriting thing, but used a symbol name to indicate
+	 * where that could happen, indicating this was before memory management
+	 * hardware existed.  sbrk() is used to expand the heap as is traditional
+	 * today.  Hardware at the time would have supported virtual memory.
+	 *
+	 * v5 also uses numerous #define macros, which are lacking in earlier versions,
+	 * making this one the oldest & easiest to understand. */
 	int treespace[ossiz];
 	register char *sp, *np;
 	register struct kwtab *ip;
@@ -55,6 +67,8 @@ char *argv[];
 		error("Arg count");
 		exit(1);
 	}
+	/* BCD: arguments are source file, intermediate tree file, and
+	   intermediate strings file. */
 	if((fin=open(argv[1],0))<0) {
 		error("Can't find %s", argv[1]);
 		exit(1);
@@ -66,6 +80,9 @@ char *argv[];
 	if (argc>4)
 		proflg++;
 	xdflg++;
+	/* BCD: Put the keywords into the symbol table, so one lookup
+	 * will handle user identifiers or keywords.  They are tagged
+	 * as keyword class, KEYWC. */
 	for (ip=kwtab; (np = ip->kwname); ip++) {
 		for (sp = symbuf; sp<symbuf+ncps;)
 			if ((*sp++ = *np++) == '\0')
@@ -78,14 +95,17 @@ char *argv[];
 	treebase = treespace+10;
 	putw(treebase, binbuf);
 	while(!eof) {
-		extdef();
-		blkend();
+		extdef(); /* BCD: read a definition */
+		blkend(); /* BCD: end a definition */
 	}
 	flush();
 	fflush(binbuf);
 	exit(nerror!=0);
 }
 
+/* BCD: Returns symtab entry for a name 'symbuf', or create it if
+ * it doesn't exist.  This first computes a hash on the name
+ * to determine where in the table to look first. */
 struct hshtab *lookup()
 {
 	int ihash;
@@ -98,7 +118,7 @@ struct hshtab *lookup()
 	rp = &hshtab[ihash%hshsiz];
 	while (*(np = rp->name)) {
 		for (sp=symbuf; sp<symbuf+ncps;)
-			if (*np++ != *sp++)
+			if (*np++ != *sp++) /* BCD: note, no strcmp */
 				goto no;
 		return(rp);
 	no:
@@ -120,6 +140,9 @@ struct hshtab *lookup()
 	return(rp);
 }
 
+/* BCD: The scanner; returns one token/symbol at a time.  No lex() yet :-).
+ * peeksym can be pushed to peek ahead at the next symbol.
+ * peekc similarly allows to peek ahead at the next character. */
 symbol() {
 	register c;
 	register char *sp;
@@ -143,6 +166,7 @@ loop:
 	switch(ctab[c]) {
 
 	case INSERT:		/* ignore newlines */
+		/* BCD: This is ASCII character 0x01 (SOH - Start of Heading) */
 		inhdr = 1;
 		c = getchar();
 		goto loop;
@@ -169,6 +193,10 @@ loop:
 	case ASSIGN:
 		if (subseq(' ',0,1)) return(ASSIGN);
 		c = symbol();
+		/* BCD: Parse =+ here, instead of +=, etc.  It's easier to parse the '='
+		 * and then modify it based on the next character.  Note this can cause
+		 * ambiguity when = is followed by a unary minus/star/address of, and
+		 * there's even a warning for that happening. */
 		if (c>=PLUS && c<=EXOR) {
 			if (peekc==0)
 				peekc = getchar();
@@ -226,6 +254,11 @@ com1:
 	case PERIOD:
 	case DIGIT:
 		peekc = c;
+		/* BCD: No supported for hex integers yet, only decimal or octal.
+		 * getnum is not defined here, it must be an assembler routine.  Returns
+		 * FCON when it parses a float/double; in that case, fcval holds the
+		 * 4 words of the value, and cval is set here to a label that acts as a
+		 * pointer to it. */
 		if ((c=getnum(c=='0'?8:10)) == FCON)
 			cval = isn++;
 		return(c);
@@ -237,6 +270,7 @@ com1:
 		return(getcc());
 
 	case LETTER:
+		/* BCD: Capture identifier into symbuf */
 		sp = symbuf;
 		if (mosflg) {
 			*sp++ = '.';
@@ -246,10 +280,14 @@ com1:
 			if (sp<symbuf+ncps) *sp++ = c;
 			c = getchar();
 		}
+		/* BCD: Ensure symbuf is NUL-padded for identifiers less than 8 characters.
+		 * Note, an 8-char identifier is not null terminated at all. */
 		while(sp<symbuf+ncps)
 			*sp++ = '\0';
 		peekc = c;
 		csym = lookup();
+		/* BCD: Return SIZEOF for the sizeof keyword, KEYW for all other keywords,
+		 * or NAME for a user defined. */
 		if (csym->hclass==KEYWC) {
 			if (csym->htype==SIZEOF)
 				return(SIZEOF);
@@ -273,6 +311,12 @@ com1:
 	return(ctab[c]);
 }
 
+/* BCD: Commonly used in the lexical analyzer, enough to warrant a subroutine.
+ * If next character is 'c', then return 'b', else return 'a'.
+ * Used when two lexical tokens share a prefix, e.g. + and ++.
+ * The order of a, b is not what I would have expected; it is opposite of the
+ * ?: operator.
+ */
 subseq(c,a,b) {
 	if (!peekc)
 		peekc = getchar();
@@ -306,6 +350,9 @@ getcc()
 	cval = 0;
 	ccp = &cval;
 	cc = 0;
+	/* BCD: Note that multiple characters can be embedded in a character
+	 * constant, e.g. 'xy'.  This is permitted up to 'ncpw' (number of
+	 * characters per word). */
 	while((c=mapch('\'')) >= 0)
 		if(cc++ < ncpw)
 			*ccp++ = c;
@@ -314,6 +361,9 @@ getcc()
 	return(CON);
 }
 
+/* BCD: Parses a character constant that may contain an escape sequence.
+ * 'ac' is the terminating character (single or double quote), which
+ * causes this to return -1. */
 mapch(ac)
 {
 	register int a, c, n;
@@ -374,6 +424,8 @@ loop:
 	return(a);
 }
 
+/* BCD: Parses an expression.  Calls build() to push trees onto the
+ * expression stack. */
 tree()
 {
 #define	SEOF	200
@@ -395,6 +447,8 @@ tree()
 advanc:
 	switch (o=symbol()) {
 
+	/* BCD: Operands are pushed onto the cm stack (cp).  andflg is set
+	 * to 1 indicating that the next token cannot also be an operand. */
 	case NAME:
 		cs = csym;
 		if (cs->hclass==0 && cs->htype==0)
@@ -429,6 +483,8 @@ advanc:
 
 	case CON:
 	case SFCON:
+		/* BCD: note that the scanner does not return typed constants - only integers
+		 * and doubles. */
 		*cp++ = block(1,o,(o==CON?INT:DOUBLE),0,cval);
 		goto tand;
 
@@ -448,6 +504,7 @@ tand:
 
 	case INCBEF:
 	case DECBEF:
+		/* BCD: Converts preincrement to postincrement */
 		if (andflg)
 			o =+ 2;
 		goto oponst;
@@ -455,12 +512,14 @@ tand:
 	case COMPL:
 	case EXCLA:
 	case SIZEOF:
+		/* BCD: None of these are postfix operators */
 		if (andflg)
 			goto syntax;
 		goto oponst;
 
 	case MINUS:
 		if (!andflg)  {
+			/* BCD: Convert to prefix operator NEG */
 			if ((peeksym=symbol())==FCON) {
 				fcval = - fcval;
 				goto advanc;
@@ -477,6 +536,7 @@ tand:
 
 	case AND:
 	case TIMES:
+		/* BCD: As prefix operator, convert AND to AMPER and TIMES to STAR. */
 		if (andflg)
 			andflg = 0; else
 			if(o==AND)
@@ -487,6 +547,7 @@ tand:
 
 	case LPARN:
 		if (andflg) {
+			/* BCD: As postfix operator, convert to function call */
 			o = symbol();
 			if (o==RPARN)
 				o = MCALL;
@@ -506,6 +567,8 @@ tand:
 
 	case DOT:
 	case ARROW:
+		/* BCD: Inform symbol table lookup that next name should be member
+		 * of structure. */
 		mosflg++;
 		break;
 
@@ -515,11 +578,18 @@ tand:
 		goto syntax;
 	andflg = 0;
 
+	/* BCD: I'm guessing this means "operator on stack".  Compare priority
+	 * of current symbol versus the top of stack symbol. */
 oponst:
+	/* BCD: p is the priority of the operator (see c04.c).
+	 * COMMA is normally 07 and COLON is 14, but this is lowered
+	 * when initflg is set, when parsing a constant initializer.  The
+	 * comma is then used to separate the initializers of an array.  Colon? */
 	p = (opdope[o]>>9) & 077;
 	if ((o==COMMA || o==COLON) && initflg)
 		p = 05;
 opon1:
+	/* BCD: pp is the priority stack pointer.  Initial value on stack is 06. */
 	ps = *pp;
 	if (p>ps || p==ps && (opdope[o]&RASSOC)!=0) {
 		switch (o) {
@@ -537,10 +607,13 @@ opon1:
 			error("expression overflow");
 			exit(1);
 		}
+		/* BCD: Push operator/priority onto their stacks */
 		*++op = o;
 		*++pp = p;
 		goto advanc;
 	}
+
+	/* BCD: Or, pop from stack */
 	--pp;
 	switch (os = *op--) {
 
@@ -557,6 +630,7 @@ opon1:
 
 	case MCALL:
 		*cp++ = block(0,0,0,0);	/* 0 arg call */
+		/* BCD: MCALL is always turned into CALL eventually. */
 		os = CALL;
 		goto fbuild;
 
@@ -581,6 +655,12 @@ syntax:
 	return(0);
 }
 
+/* BCD: Parse a list of declarators/names.  askw and tkw give
+ * the storage/type keyword, respectively.  offset is the
+ * "address" within the storage area for the first declaration
+ * to be assigned.  elsize is nonzero for structs and give
+ * their total size.
+ * Returns the new offset. */
 declare(askw, tkw, offset, elsize)
 {
 	register int o;
@@ -597,6 +677,8 @@ declare(askw, tkw, offset, elsize)
 	decsyn(o);
 }
 
+/* BCD: Parse a single declarator.  Called from declare() above in
+ * a loop. */
 decl1(askw, tkw, offset, elsize)
 {
 	int t1, chkoff;
@@ -608,13 +690,20 @@ decl1(askw, tkw, offset, elsize)
 	mosflg = skw==MOS;
 	if ((peeksym=symbol())==SEMI || peeksym==RPARN)
 		return(0);
+	/* BCD: Read the name and any array/pointer notation attached to it.
+	 * t1 returns the type info, minus the base type in tkw above. */
 	if ((t1=getype()) < 0)
 		goto syntax;
+
+	/* BCD: Merge t1 and tkw into a combined type value. */
 	type = 0;
 	do
 		type = type<<2 | (t1 & 030);
 	while (((t1=>>2) & 030)!=0);
 	type =| tkw;
+
+	/* BCD: Move defsym into local 'dsym', since in a structure type parse,
+	 * defsym may change on recursive calls. */
 	dsym = defsym;
 	if (!(dsym->hclass==0
 	   || (skw==ARG && dsym->hclass==ARG1)
@@ -636,6 +725,8 @@ decl1(askw, tkw, offset, elsize)
 		parame = dsym;
 	}
 	if (elsize && ((type&07)==RSTRUCT || (type&07)==STRUCT)) {
+		/* BCD: Calculate the size of the struct, save that into the next
+		 * free entry in 'dimtab', then put the dimtab pointer into 'lenp'. */
 		dsym->lenp = dimp;
 		chkdim();
 		dimtab[dimp++] = elsize;
@@ -656,6 +747,15 @@ decl1(askw, tkw, offset, elsize)
 			error("Bad function");
 		dsym->hclass = EXTERN;
 	}
+
+	/* BCD: Set the symbol's hoffset.
+	 * For locals, increment 'autolen' which is the total size of all locals.
+	 * For statics, use an autogenerated symbol from 'isn' for its address; the
+	 *    linker will assign the address.
+	 * For register variables, use 'regvar', which is a register number.
+	 *    Floats/structs/functions/arrays not allowed.  regvar<3 implies that
+	 *    only 3 register variables are allowed (r2, r3, and r4).
+	 */
 	if (dsym->hclass==AUTO) {
 		autolen =+ rlength(dsym);
 		dsym->hoffset = -autolen;
@@ -672,6 +772,10 @@ syntax:
 	return(elsize);
 }
 
+/* BCD: Read name plus optional preceding stars and/or succeeding array
+ * brackets: the declarator.  Returns a type value if any array/pointer
+ * options are included, else 0.  Also sets 'defsym' to the symbol for
+ * the name. */
 getype()
 {
 	register int o, type;
@@ -705,19 +809,31 @@ getype()
 			} else
 				if ((o=symbol()) != RPARN)
 					goto syntax;
+			/* BCD: For the type "function returning T", and the like, the
+			 * T is always shifted via "type<<2", as the lower 2-bits cover
+			 * the simple types: int, char, float, and double.  Struct/rstruct
+			 * are not allowed to be returned from functions with the simple
+			 * calling conventions implemented at this point, so they are not
+			 * considered. */
 			type = type<<2 | FUNC;
 			goto getf;
 
 		case LBRACK:
 			if ((o=symbol()) != RBRACK) {
+				/* BCD: Handle array subscripts in declarations, e.g. int x[10].
+				 * 'dimtab' is a global table of all dimension constants used in
+				 * the program.  This is a space saving technique to avoid reserving
+				 * an entire word in each symbol table entry. */
 				peeksym = o;
 				cval = conexp();
+				/* BCD: For multidimension arrays, update the earlier sizes too. */
 				for (o=ds->ssp&0377; o<dimp; o++)
 					dimtab[o] =* cval;
 				dimtab[dimp++] = cval;
 				if ((o=symbol())!=RBRACK)
 					goto syntax;
 			} else
+				/* BCD: The size of an unspecified array is 1. */
 				dimtab[dimp++] = 1;
 			type = type<<2 | ARRAY;
 			goto getf;

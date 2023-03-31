@@ -64,6 +64,7 @@ loop:
 
 	case '\0':
 		printf(".text; 0\n");
+		/* BCD: Changed from flush() to fflush() in v5. */
 		fflush(obuf);
 		return;
 
@@ -74,6 +75,7 @@ loop:
 		goto loop;
 
 	case 'A':
+		/* BCD: Changed to use logical OR operator, new to v5. */
 		if ((c=getc())=='1' || c=='2') {
 			putchar(c+'A'-'1');
 			goto loop;

@@ -7,6 +7,21 @@
 
 #include "c1h.c"
 
+/* BCD: From the Tour paper:
+ * Each expression tree, as it is read in, is subjected to a fairly comprehensive
+ * analysis.  This is performed by the optim routine and a number of subroutines;
+ * the major things done are 1. Modifications and simplifications of the tree so
+ * its value may be computed more efficiently and conveniently by the code generator.
+ * 2. Marking each interior node with an estimate of the number of registers
+ * required to evaluate it.  This register count is needed to guide the code
+ * generation algorithm. One thing that is definitely not done is discovery or
+ * exploitation of common subexpressions, nor is this done anywhere in the compiler.
+ *
+ * BCD: Note, this returns another tree.  Also as this is c12.c, these routines were
+ * not in the earlier versions of the compiler, so this is the first attempt at
+ * optimizing the code.  This function performs both machine-independent and machine-
+ * dependent changes.
+ */
 optim(atree)
 struct tnode *atree;
 {
@@ -15,30 +30,42 @@ struct tnode *atree;
 	struct tnode *t;
 	register struct tnode *tree;
 
+	/* BCD: Null trees, or trees without an operation (free trees), are returned as-is. */
 	if ((tree=atree)==0)
 		return(0);
 	if ((op = tree->op)==0)
 		return(tree);
+
+	/* BCD: Automatic (local) variables have their class set to OFFS (offset from stack)
+	 * using the base register r5 on the PDP-11. */
 	if (op==NAME && tree->class==AUTO) {
 		tree->class = OFFS;
 		tree->regno = 5;
 		tree->offset = tree->nloc;
 	}
 	dope = opdope[op];
-	if ((dope&LEAF) != 0)
+	if ((dope&LEAF) != 0) /* BCD: leaf nodes can't be simplified */
 		return(tree);
-	if ((dope&BINARY) == 0)
+	if ((dope&BINARY) == 0) /* BCD: non-binary operators are simplfied by the unary optimizer */
 		return(unoptim(tree));
 	/* is known to be binary */
 	if ((dope&COMMUTE)!=0) {
 	acomm:	d1 = tree->type;
-		tree = acommute(tree);
+		tree = acommute(tree); /* BCD: commutative binaries are simplified by acommute */
 		tree->type = d1;
 		return(tree);
 	}
+
+	/* BCD: below are non-commutative binary operations.
+	 * Recursively optim. each of the operands first.
+	 */
 	tree->tr1 = optim(tree->tr1);
 	tree->tr2 = optim(tree->tr2);
 	if ((dope&RELAT) != 0) {
+		/* BCD: From the Tour: Relationals are turned around so the more complicated
+		 * expression is on the left.  (So that `2 > f(x)' becomes `f(x) < 2').
+		 * This improves code generation since the algorithm prefers to have the right operand
+		 * require fewer registers than the left. */
 		if ((d1=degree(tree->tr1)) < (d2=degree(tree->tr2))
 		 || d1==d2 && tree->tr1->op==NAME && tree->tr2->op!=NAME) {
 			t = tree->tr1;
@@ -46,16 +73,26 @@ struct tnode *atree;
 			tree->tr2 = t;
 			tree->op = maprel[op-EQUAL];
 		}
+		/* BCD: Change the type of a constant in the right operand
+		 * from INT to CHAR, if it is within the valid range and the left
+		 * operand is also a CHAR. */
 		if (tree->tr1->type==CHAR && tree->tr2->op==CON
 		 && (dcalc(tree->tr1) <= 12 || tree->tr1->op==STAR)
 		 && tree->tr2->value <= 127 && tree->tr2->value >= 0)
 			tree->tr2->type = CHAR;
 	}
+
+	/* BCD: Assign the Sethi-Ullman number to each operand.  degree() returns a
+	 * generalized degree that is not just register-based.  It may be negative
+	 * in some cases.  The max() function converts these values to something
+	 * closer to a register count. */
 	d1 = max(degree(tree->tr1), 1);
 	d2 = max(degree(tree->tr2), 0);
 	switch (op) {
 
 	case ASSAND:
+		/* BCD: This is PDP-11 specific; it has no AND instruction, only "and not".
+		 * Rewrite a & ~b --> a nand b. */
 		if (tree->tr2->op == COMPL) {
 			tree->tr2 = tree->tr2->tr1;
 			d2 = max(degree(tree->tr2), 0);
@@ -74,8 +111,10 @@ struct tnode *atree;
 
 	case MINUS:
 		if (tree->tr2->op==CON) {	/* const */
+			/* BCD: Convert X-N to X+(-N) */
 			tree->op = PLUS;
 			tree->tr2->value = -tree->tr2->value;
+			/* BCD: and now the operation is commutative, so can simplify further there */
 			goto acomm;
 		}
 		goto def;
@@ -83,8 +122,11 @@ struct tnode *atree;
 	case DIVIDE:
 	case ASDIV:
 	case ASTIMES:
+		/* BCD: Fold multiply/divide by constant 1 */
 		if (tree->tr2->op==CON && tree->tr2->value==1)
 			return(tree->tr1);
+
+		/* BCD: Modulus has a higher degree, when not working with 2^N */
 		if (ispow2(tree) == 0) {
 
 		case MOD:
@@ -98,18 +140,26 @@ struct tnode *atree;
 	case RSHIFT:
 	case ASRSH:
 	case ASLSH:
+		/* BCD: Eliminate zero shifts */
 		if (tree->tr2->op==CON && tree->tr2->value==0)
 			return(tree->tr1);
 
 	constant:
 		if (tree->tr1->op==CON && tree->tr2->op==CON) {
-			const(op, &tree->tr1->value, tree->tr2->value);
+			/* BCD: Fold constant expressions.  Use tr1 to hold the result.
+			 * No need to allocate a new tree for the answer.
+			 * X prefix added to make friendly to newer tools where 'const' is
+			 * reserved. */
+			Xconst(op, &tree->tr1->value, tree->tr2->value);
 			return(tree->tr1);
 		}
 
 
 	def:
 	default:
+		/* BCD: This is the Sethi-Ullman algorithm in a nutshell.  If the two
+		 * operands have equal degree N, then the operator has degree N+1,
+		 * else the maximum of the two operands. */
 		tree->degree = d1==d2? ++d1: max(d1, d2);
 		break;
 	}
@@ -182,6 +232,8 @@ struct tnode *atree;
 			}
 		}
 	}
+	/* BCD: Perform integer to float conversion of a constant at
+	 * compile time.  CON becomes SFCON. */
 	if (tree->op == ITOF && subtre->op == CON) {
 		fv = subtre->value;
 		p = &fv;
@@ -193,6 +245,8 @@ struct tnode *atree;
 			return(subtre);
 		}
 	}
+
+	/* BCD: Integer constant folding for unaries */
 	if (subtre->op == CON) switch(tree->op) {
 
 	case NEG:
@@ -203,6 +257,10 @@ struct tnode *atree;
 		subtre->value = ~subtre->value;
 		return(subtre);
 	}
+
+	/* BCD: Sethi-Ullman for a unary operator.  A slightly optimized version
+	 * of the general algorithm above for binaries, where one of the arguments
+	 * is zero. */
 	tree->degree = max(1, degree(subtre));
 	return(tree);
 }
@@ -214,6 +272,13 @@ struct acl {
 	struct tnode *llist[21];
 };
 
+/* BCD: From the Tour:
+ * The acommute routine, called for associative and commutative operators,
+ * discovers clusters of the same operator at the top levels of the current
+ * tree, and arranges them in a list: for `a+((b+c)+(d+f))' the list would
+ * be `a,b,c,d,e,f'.  After each subtree is optimized, the list is sorted in
+ * decreasing difficulty of computation; as mentioned above, the code
+ * generation algorithm works best when left operands are the difficult ones. */
 acommute(atree)
 {
 	struct acl acl;
@@ -234,11 +299,13 @@ acommute(atree)
 		for (i=acl.nextl;i>0&&t2[0]->op==CON&&t2[-1]->op==CON;i--) {
 			acl.nextl--;
 			t2--;
-			const(op, &t2[0]->value, t2[1]->value);
+			Xconst(op, &t2[0]->value, t2[1]->value);
 		}
 	}
 	if (op==PLUS) {
 		/* toss out "+0" */
+		/* BCD: Why would this happen?  Probably for references to a struct's
+		 * first field. */
 		if (acl.nextl>0 && ((*t2)->op==CON || (*t2)->op==SFCON)
 		 && (*t2)->value==0) {
 			acl.nextl--;
@@ -247,6 +314,8 @@ acommute(atree)
 		if (acl.nextl <= 0)
 			return(*t2);
 		/* subsume constant in "&x+c" */
+		/* BCD; e.g. a stack address like 4,S when added to a constant 2
+		 * would yield 6,S. */
 		if (t2[0]->op==CON && t2[-1]->op==AMPER) {
 			t2--;
 			t2[0]->tr1->offset =+ t2[1]->value;
@@ -255,6 +324,7 @@ acommute(atree)
 	} else if (op==TIMES) {
 		t1 = acl.llist[acl.nextl];
 		if (t1->op==CON) {
+			/* BCD: Handle times zero (return zero) or times one (return self). */
 			if (t1->value==0)
 				return(t1);
 			if (t1->value==1 && acl.nextl>0)
@@ -264,6 +334,7 @@ acommute(atree)
 	}
 	if (op==PLUS && !flt)
 		distrib(&acl);
+	/* BCD: Put all the operands back together again */
 	tree = *(t2 = &acl.llist[0]);
 	d = max(degree(tree), 1);
 	if (op==TIMES && !flt)
@@ -362,7 +433,7 @@ struct tnode **p, **maxp;
 		*np = *(np+1);
 }
 
-const(op, vp, av)
+Xconst(op, vp, av)
 int *vp;
 {
 	register int v;
@@ -460,6 +531,14 @@ struct acl *alist;
 	list->llist[list->nextl++] = tree;
 }
 
+/* BCD: Allocates a tree node.  See c01.c for version in pass 1.
+ * This is needed in some cases when the tree needs to be expanded
+ * from what was passed in from pass 1.  spacep points to the first
+ * word of free space.
+ * The allocation will have at least 3 words, for the common size of a
+ * tree (see struct tnode; it provides op, type, and degree).  an
+ * specifies the number of additional words needed. Their initializers
+ * are passed on the stack also, using a primitive form of varargs. */
 block(an, args)
 {
 	register int *p;

@@ -1,3 +1,7 @@
+/* BCD: opdope is indexed by an operator code (see c1h.c: EOF, SEMI, etc.)
+ * See "Flag  bits" in the same file for a list of the possible bit values.
+ * Note: this same table appears in c04.c as well, but the values are not
+ * exactly the same. */
 int opdope[] {
 	000000,	/* EOF */
 	000000,	/* ; */

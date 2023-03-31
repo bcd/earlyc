@@ -4,7 +4,7 @@
 
 .data
 _cctab=.
-	106.;	cc60
+	106.;	cc60 ; BCD: LOAD
 	28.;	rest
 	34.;	rest
 	35.;	rest
@@ -16,9 +16,9 @@ _cctab=.
 	43.;	rest
 	45.;	rest
 	46.;	rest
-	47.;	cc47
+	47.;	cc47 ; BCD: AND
 	48.;	rest
-	60.;	cc60
+	60.;	cc60 ; BCD: EQUAL, NEQUAL, etc. up to GREATP.
 	61.;	cc60
 	62.;	cc60
 	63.;	cc60

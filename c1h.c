@@ -2,21 +2,27 @@
  *	C pass 2 header
  */
 
-struct	tnode {
+/* BCD: Note in early C, the field name of the structures had to be unique across all
+ * structs.  Each structure does not provide its own namespace.
+ *
+ * bnode, tname, and tconst are properly specializations of tnode, what would be
+ * described by a union in future versions of C. */
+
+struct	tnode { /* BCD: Expression tree node */
 	int	op;
 	int	type;
 	int	degree;
 	struct	tnode *tr1, *tr2;
 };
 
-struct	bnode {
+struct	bnode { /* BCD: Branch tree node */
 	int	bop;
 	struct	tnode *btree;
 	int	lbl;
 	int	cond;
 };
 
-struct	tname {
+struct	tname { /* BCD: Name tree node */
 	int	nop;
 	int	ntype;
 	int	elsize;
@@ -26,14 +32,14 @@ struct	tname {
 	int	nloc;
 };
 
-struct	tconst {
+struct	tconst { /* BCD: Constant tree node. */
 	int	cop;
 	int	ctype;
 	int	cdeg;
 	int	value;
 };
 
-struct	optab {
+struct	optab { /* BCD: A codegen table entry */
 	char	tabdeg1;
 	char	tabtyp1;
 	char	tabdeg2;
@@ -41,7 +47,7 @@ struct	optab {
 	char	*tabstring;
 };
 
-struct	table {
+struct	table { /* BCD: one of regtab, efftab, optab, or sptab */
 	int	tabop;
 	struct	optab *tabp;
 };
@@ -66,6 +72,9 @@ int	line;
 char	binbuf[518];
 char	ascbuf[518];
 int	nerror;
+/* BCD: The first four tables are output from the 'cvopt' program.
+ * What is lsptab?  instab is defined in c1t.s. but doesn't appear
+ * in the pass 2 source otherwise. */
 struct	table	cctab[];
 struct	table	efftab[];
 struct	table	regtab[];
@@ -85,6 +94,10 @@ struct tconst czero, cone, fczero;
 /*
 	operators
 */
+
+/* BCD: note these are shared between pass 1 (parsing) and pass 2
+ * (code generation)
+ */
 #define	EOF	0
 #define	SEMI	1
 #define	LBRACE	2
@@ -105,10 +118,10 @@ struct tconst czero, cone, fczero;
 
 #define	AUTOI	27
 #define	AUTOD	28
-#define	INCBEF	30
-#define	DECBEF	31
-#define	INCAFT	32
-#define	DECAFT	33
+#define	INCBEF	30 /* BCD: preincrement */
+#define	DECBEF	31 /* BCD: predecrement */
+#define	INCAFT	32 /* BCD: postincrement */
+#define	DECAFT	33 /* BCD: postdecrement */
 #define	EXCLA	34
 #define	AMPER	35
 #define	STAR	36
