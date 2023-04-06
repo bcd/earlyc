@@ -164,6 +164,9 @@ char	cvntab[] {
 /*
  * character type table
  */
+/* BCD: \v and \f are now recognized as whitespace.
+ * The hash sign (SHARP) and backslash are also recognized by the lexer.
+ */
 char ctab[] {
 	EOFC,	INSERT,	UNKN,	UNKN,	UNKN,	UNKN,	UNKN,	UNKN,
 	UNKN,	SPACE,	NEWLN,	SPACE,	SPACE,	UNKN,	UNKN,	UNKN,

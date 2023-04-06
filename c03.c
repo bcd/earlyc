@@ -411,6 +411,8 @@ struct hshtab *atptr, *absname;
 		dsym->hoffset = offset;
 		*memlist++ = dsym;
 	}
+	/* BCD: register is now optionally satisfied.  If goodreg() does not
+	 * return a register, then fall back to an AUTO variable. */
 	if (skw==REG)
 		if ((dsym->hoffset = goodreg(dsym)) < 0)
 			skw = AUTO;

@@ -86,6 +86,9 @@ char *argv[];
 			i =+ *sp++;
 		hshtab[i%HSHSIZ].hflag = FKEYW;
 	}
+
+	/* BCD: Set 'funcbase' and 'coremax' to the top of the data segment.
+	 * This is where dynamic allocations will come from. */
 	coremax = funcbase = curbase = sbrk(0);
 	while(!eof)
 		extdef();
@@ -109,6 +112,7 @@ lookup()
 
 	ihash = 0;
 	sp = symbuf;
+	/* BCD: New to v7, ignore 8th bit of each byte in hashing. */
 	while (sp<symbuf+NCPS)
 		ihash =+ *sp++&0177;
 	rp = &hshtab[ihash%HSHSIZ];
@@ -134,6 +138,7 @@ lookup()
 	rp->hclass = 0;
 	rp->htype = 0;
 	rp->hoffset = 0;
+	/* BCD: In v7, subsp replaces dimp (dimtab). */
 	rp->subsp = NULL;
 	rp->strp = NULL;
 	rp->hpdown = NULL;
@@ -209,6 +214,9 @@ loop:
 	}
 	switch(ctab[c]) {
 
+	/* BCD: New to v7, recognize lines of the form:
+	 * # <number> "<filename>"
+	 * For the debugger? */
 	case SHARP:
 		if ((c=symbol())!=CON) {
 			error("Illegal #");
@@ -291,12 +299,15 @@ loop:
 	case EXCLA:
 		return(subseq('=',EXCLA,NEQUAL));
 
+		/* BCD: New to v7, parse the \/ (MAX) and /\ (MIN)operators.
+		 * Although parsed, they were never implemented in the code generator. */
 	case BSLASH:
 		if (subseq('/', 0, 1))
 			return(MAX);
 		goto unkn;
 
 	case DIVIDE:
+		/* BCD: The /\ operator means MIN. */
 		if (subseq('\\', 0, 1))
 			return(MIN);
 		if (subseq('*',1,0))
@@ -365,6 +376,8 @@ loop:
 /*
  * Read a number.  Return kind.
  */
+/* BCD: this was in a library prior to v7.  Not sure if it was assembler or C
+ * before. */
 getnum()
 {
 	register char *np;
@@ -698,6 +711,7 @@ advanc:
 
 	case INCBEF:
 	case DECBEF:
+		/* BCD: Converts preincrement to postincrement */
 		if (andflg)
 			o =+ 2;
 		goto oponst;
@@ -705,6 +719,7 @@ advanc:
 	case COMPL:
 	case EXCLA:
 	case SIZEOF:
+		/* BCD: None of these are postfix operators */
 		if (andflg)
 			goto syntax;
 		goto oponst;
@@ -717,6 +732,7 @@ advanc:
 
 	case AND:
 	case TIMES:
+		/* BCD: As prefix operator, convert AND to AMPER and TIMES to STAR. */
 		if (andflg)
 			andflg = 0;
 		else if (o==AND)
@@ -727,6 +743,7 @@ advanc:
 
 	case LPARN:
 		if (andflg) {
+			/* BCD: As postfix operator, convert to function call */
 			o = symbol();
 			if (o==RPARN)
 				o = MCALL;
@@ -746,6 +763,8 @@ advanc:
 
 	case DOT:
 	case ARROW:
+		/* BCD: Inform symbol table lookup that next name should be member
+		 * of structure. */
 		mosflg++;
 		break;
 
@@ -763,7 +782,10 @@ advanc:
 		goto syntax;
 	andflg = 0;
 
+	/* BCD: I'm guessing this means "operator on stack".  Compare priority
+	 * of current symbol versus the top of stack symbol. */
 oponst:
+	/* BCD: p is the priority of the operator (see c05.c). */
 	p = (opdope[o]>>9) & 077;
 opon1:
 	ps = *pp;

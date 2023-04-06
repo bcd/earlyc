@@ -3,7 +3,10 @@
  *  C compiler
  */
 
+/* BCD: New to v7, c1h.c renamed to c1.h: the .h convention for headers */
 #include "c1.h"
+
+/* BCD: Many helper routines here */
 
 max(a, b)
 {
@@ -12,6 +15,11 @@ max(a, b)
 	return(b);
 }
 
+/* BCD: From the Tour:
+ * The `degree of difficulty' computed is actually finer than the mere number of
+ * registers required; a constant is considered simpler than the address of a static
+ * or external, which is simpler than reference to a variable.
+ */
 degree(at)
 struct tnode *at;
 {
@@ -154,6 +162,13 @@ struct tnode *ap;
 	return(d);
 }
 
+
+/* BCD: dcalc() is a layer above degree(), as it is not just based on Sethi-
+ * Ullman numbering, but other factors of difficulty.  Floating-point and
+ * forms of indirection are penalized further.  Also, if the estimated number
+ * of registers needed is bigger than the number available, penalize more.
+ * Not sure what the values here actually mean, but it is probably related
+ * to PDP-11 cycle counts. */
 dcalc(ap, nrleft)
 struct tnode *ap;
 {
@@ -195,6 +210,12 @@ struct tnode *ap;
 	return(p->degree <= nrleft? 20: 24);
 }
 
+/* BCD: The main routine for checking if a tree 'ap' has incompatible
+ * type with the spec given in 'ast'.  op is the parent operator.
+ * This routine could use some preprocessor love.
+ * See "types" in c1h.c for the bit definitions, also remember that
+ * composite types have multiple values shifted up.
+ */
 notcompat(ap, ast, op)
 struct tnode *ap;
 {
@@ -260,6 +281,9 @@ struct tnode *ap;
 	return(0);
 }
 
+/* BCD: Returns a character to be appended to an instruction mnemonic.
+ * Both 'float' and 'double' types will return 'f', else a zero character
+ * (which doesn't print anything). */
 isfloat(at)
 struct tnode *at;
 {
@@ -309,6 +333,7 @@ struct tnode *t;
 	return(reg);
 }
 
+/* BCD: get argument length of a simple type as it appears on the stack. */
 arlength(t)
 {
 	if (t>=PTR)
@@ -376,14 +401,28 @@ struct swtab *afp, *alp;
 		return;
 	ncase = lp-fp;
 	lp--;
+
+	/* BCD: The table ranges from 'afp' (first value) to 'alp' (last value). */
 	range = lp->swval - fp->swval;
+
 	/* direct switch */
 	if (range>0 && range <= 3*ncase) {
+		/* BCD: The canonical implementation of a jump table.  The minimum
+		 * value is subtracted off, to yield an index.  If the expression is
+		 * higher than any case value, then jump to the default.  Else,
+		 * scale the index by a pointer size (2x) and jump indirect.
+		 * This implementation works best when the case value are dense over
+		 * the range.
+		 *
+		 * If the range is too large, then this is skipped, to avoid making a
+		 * big jump table, when it would mostly have default entries. */
 		if (fp->swval)
 			printf("sub	$%o,r0\n", fp->swval);
 		printf(dirsw, range, deflab, isn, isn);
 		isn++;
 		for (i=fp->swval; ; i++) {
+			/* BCD: New to v7, the end check of the for loop was removed and changed to
+			 * a break statement below.  This is a simpler pointer comparison. */
 			if (i==fp->swval) {
 				printf("L%d\n", fp->swlab);
 				if (fp==lp)
@@ -397,6 +436,10 @@ struct swtab *afp, *alp;
 	}
 	/* simple switch */
 	if (ncase<10) {
+		/* BCD: Simple switches changed in v7 to just emit code to test each value one
+		 * by one.  The data table is eliminated; this is now effectively a cascading
+		 * series of 'if' comparisons.  The size is also increased from 8 to 10 for this
+		 * case. */
 		for (fp = afp; fp<=lp; fp++)
 			breq(fp->swval, fp->swlab);
 		printf("jbr	L%d\n", deflab);
@@ -429,6 +472,8 @@ struct swtab *afp, *alp;
 	for (i=0; i<tabs; i++) {
 		printf("L%d:", isn++);
 		for (swp=fp; swp<=lp; swp++) {
+			/* BCD: Here, the compiler itself was changed to use unsigned division.
+			 * This previously used functions ldiv() and lrem(). */
 			/* lrem(0, swp->swval, tabs) */
 			if ((unsigned)swp->swval%tabs == i) {
 				/* ldiv(0, swp->swval, tabs) */
@@ -448,6 +493,7 @@ breq(v, l)
 	printf("jeq	L%d\n", l);
 }
 
+/* BCD: Sort the array of switch statement values (the 'case's). */
 sort(afp, alp)
 struct swtab *afp, *alp;
 {
@@ -479,6 +525,7 @@ struct swtab *afp, *alp;
 	return(0);
 }
 
+/* BCD: Return tree value if it is an integer constant power of 2. */
 ispow2(atree)
 {
 	register int d;
@@ -493,6 +540,8 @@ ispow2(atree)
 	return(0);
 }
 
+/* BCD: Convert multiply/divide into equivalent shift when the
+ * operand is a constant integer power of two */
 pow2(atree)
 struct tnode *atree;
 {

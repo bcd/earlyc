@@ -5,7 +5,21 @@
  */
 
 #include "c1.h"
-
+/* BCD: From the Tour paper:
+ * Each expression tree, as it is read in, is subjected to a fairly comprehensive
+ * analysis.  This is performed by the optim routine and a number of subroutines;
+ * the major things done are 1. Modifications and simplifications of the tree so
+ * its value may be computed more efficiently and conveniently by the code generator.
+ * 2. Marking each interior node with an estimate of the number of registers
+ * required to evaluate it.  This register count is needed to guide the code
+ * generation algorithm. One thing that is definitely not done is discovery or
+ * exploitation of common subexpressions, nor is this done anywhere in the compiler.
+ *
+ * BCD: Note, this returns another tree.  Also as this is c12.c, these routines were
+ * not in the earlier versions of the compiler, so this is the first attempt at
+ * optimizing the code.  This function performs both machine-independent and machine-
+ * dependent changes.
+ */
 optim(atree)
 struct tnode *atree;
 {
@@ -1015,6 +1029,9 @@ tconst(val, type)
 	return(p);
 }
 
+/* BCD: New in v7, getblk() is awfully similar to malloc().
+ * Note allocations are assumed to be small, as the heap is only expanded
+ * by 1KB if full. */
 getblk(size)
 {
 	register *p;

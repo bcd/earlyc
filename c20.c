@@ -60,6 +60,7 @@ struct optab optab[] {
 	0,	0};
 
 char	revbr[] { JNE, JEQ, JGT, JLT, JGE, JLE, JHIS, JLOS, JHI, JLO };
+/* BCD: new in v7, initial values follow an equals sign */
 int	isn	= 20000;
 int	lastseg	= -1;
 
@@ -82,6 +83,7 @@ char **argv;
 		nflag++;
 	}
 	if (argc>1) {
+		/* BCD: new in V7, use freopen() instead of open() for buffered I/O. */
 		if (freopen(argv[1], "r", stdin) == NULL) {
 			fprintf(stderr, "C2: can't find %s\n", argv[1]);
 			exit(1);
@@ -117,6 +119,7 @@ char **argv;
 		lasta = firstr;
 	} while (isend);
 	if (nflag) {
+		/* BCD: new in V7, below write to stderr */
 		fprintf(stderr, "%d iterations\n", maxiter);
 		fprintf(stderr, "%d jumps to jumps\n", nbrbr);
 		fprintf(stderr, "%d inst. after jumps\n", iaftbr);
@@ -134,6 +137,7 @@ char **argv;
 		fprintf(stderr, "%d sob's added\n", nsob);
 		fprintf(stderr, "%d redundant tst's\n", nrtst);
 		fprintf(stderr, "%d literals eliminated\n", nlit);
+		/* BCD: new in v7, below, cast to integer added. */
 		fprintf(stderr, "%dK core\n", (((int)lastr+01777)>>10)&077);
 	}
 	exit(0);
@@ -360,6 +364,7 @@ char *ap;
 	}
 	onp = np = alloc(n);
 	p = ap;
+	/* BCD, below new in v7, move semicolon for null stmt onto its own line. */
 	while (*np++ = *p++)
 		;
 	if (na>1) {

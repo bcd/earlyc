@@ -365,6 +365,10 @@ doret()
  *   1: number 1
  *   0: number 0
  */
+
+/* BCD: From v6 to v7, this routine changed to use stdio functions.
+ * A version of putchar() that was here before has been removed. */
+
 outcode(s, a)
 char *s;
 {
