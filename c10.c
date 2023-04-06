@@ -29,6 +29,8 @@ char argv[][];
 		error("Arg count");
 		exit(1);
 	}
+
+	/* BCD: below, changed to buffered I/O for open/creat by v5. */
 	if((fin=open(argv[1],0))<0) {
 		error("Cant't find %s", argv[1]);
 		exit(1);
@@ -45,6 +47,11 @@ char argv[][];
 	tabtab[3] = sptab;
 	while(c=getchar()) {
 		if(c=='#') {
+			/* BCD: Hash signals a tree to be evaluated.
+			 * tree is the tree itself
+			 * table dictates how to compile it.
+			 * line is for debugging.
+			 */
 			sp = 0;
 			c = getwrd();
 			tree = getwrd();
@@ -52,8 +59,11 @@ char argv[][];
 			line = getwrd();
 			while(c--)
 				*sp++ = getwrd();
+			/* BCD: In v5, a zero table indicates a switch statement.  This version
+			 * emits switches in pass 1.  v5 also optimizes the tree before calling
+			 * rcexpr. */
 			rcexpr(tree, table, 0);
-		} else
+		} else /* BCD: Any other char is emitted as-is to assembler. */
 			putchar(c);
 	}
 	flush();
@@ -98,11 +108,23 @@ int tree[], table[]; {
 			t2 = dope;
 		}
 	}
+	/* BCD: First scan the table for the matching opcode; then scan all
+	 * entries in the subtable (tabp) sequentially, looking for the first
+	 * match.  The match criteria is given by 4 chars, 2 describing the
+	 * left operand and 2 for the right (if BINARY).  The structure for
+	 * each is similar.  One byte stores the maximum degree of difficulty;
+	 * if this is exceeded, then matching fails.  The other, tabtypN,
+	 * is passed with the subtree to notcompat(), which if true will also
+	 * fail to match.
+	 */
 	while(*table) {
 		if (*table++ == op) goto foundop;
 		table++;
 	}
 	return(0);
+	/* BCD: v5 implements the below with a more structured 'for' loop with
+	 * continue statements; 'for' is not present yet, and 'continue' although
+	 * supported by the compiler, is not used within it yet. */
 foundop:
 	table = *table;
 nxtry:
@@ -126,6 +148,21 @@ notyet:
 	goto nxtry;
 }
 
+/* BCD: The entry point into the real code generator.
+ * tree - tree expression to be evaluated
+ * table - this controls how code is emitted:
+ *    regtab - most applicable, puts its result in a register
+ *    cctab - used only to set the condition codes.  Used when the
+ *       expression is inside a conditional statement (if/while/etc.)
+ *    sptab - emit result onto the stack.  Note: this may be PDP-11 specific.
+ *       Some architectures do not permit writing a value directly to stack
+ *       without need of a register.
+ *    efftab - evaluate for side effects only; used for expression statements.
+ * reg - regno where the result should be placed.
+ *
+ * Returns the register number where the result was actually placed.
+ */
+
 rcexpr(tree, table, reg)
 int tree[]; {
 	extern cexpr, regtab, cctab, sptab, printf, error;
@@ -146,8 +183,11 @@ int tree[]; {
 	}
 	if ((r=cexpr(tree, table, reg))>=0)
 		return(r);
+	/* BCD: If table is not regtab, and it couldn't be evaluated, then
+	 * fall back to regtab and try again...  */
 	if (table!=regtab) 
 		if((r=cexpr(tree, regtab, reg))>=0) {
+		/* BCD: If that succeeded, need to fixup the result. */
 			if (table==sptab)
 				printf("mov%c	r%d,-(sp)\n", modf, r);
 			if (table==cctab) {
@@ -187,6 +227,8 @@ int tree[][], table[]; {
 		*tree = 101;
 		tree[2] = r;		/* save arg length */
 	}
+	/* BCD: Some special cases first, where the emitted code requires some conditional
+	 * branch statements.  */
 	if(c==90) {		/* ? */
 		cbranch(tree[3], c=isn++, 0, reg);
 		rcexpr(tree[4][3], table, reg);
@@ -202,6 +244,8 @@ int tree[][], table[]; {
 		return(-1);
 	p1 = tree[3];
 	p2 = tree[4];
+	/* BCD: If a match is found, perform the expansion indicated by
+	 * tabstring. */
 loop:
 	switch(c = *string++) {
 
@@ -235,7 +279,7 @@ retrn:
 	case 'O':
 		p = tree;
 	adr:
-		pname(p);
+		pname(p); /* BCD: print operand (either tree, or its left/right operands */
 		goto loop;
 
 	/* I */
@@ -243,7 +287,7 @@ retrn:
 		if ((c = *string)=='\'')
 			string++; else
 			c = 0;
-		prins(*tree, c);
+		prins(*tree, c); /* BCD: print operation mnemonic from tree op */
 		goto loop;
 
 	/* B1 */
@@ -550,6 +594,7 @@ int t[];
 	return(0);
 }
 
+/* Below, nreg reduces from 4 to 3 in v2->v3 */
 nreg 3;
 isn 10000;
 namsiz 8;

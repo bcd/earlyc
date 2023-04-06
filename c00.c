@@ -28,10 +28,13 @@ int argv[]; {
 		error("Arg count");
 		exit(1);
 	}
+	/* BCD: arguments are source file, intermediate tree file, and
+	   intermediate strings file. */
 	if((fin=open(argv[1],0))<0) {
 		error("Can't find %s", argv[1]);
 		exit(1);
 	}
+	/* BCD: creat was changed to fcreat in v5. */
 	if((fout=creat(argv[2], 017))<0) {
 		error("Can't create %s", argv[2]);
 		exit(1);
@@ -42,6 +45,8 @@ int argv[]; {
 	init("char", 1);
 	init("float", 2);
 	init("double", 3);
+	/* BCD: struct takes over the slot for long from v2->v3.  The compiler itself
+	 * does not use struct yet. */
 	init("struct", 4);
 	init("auto", 5);
 	init("extern", 6);
@@ -89,6 +94,7 @@ lookup() {
 		return(&hshtab[i]);
 no:		if ((i =+ pssiz) >= hshlen) i = 0;
 	}
+	/* BCD: A minor bug fix from postincrement in v2 to preincrement in v3. */
 	if(++hshused > hshsiz) {
 		error("Symbol table overflow");
 		exit(1);
@@ -107,6 +113,9 @@ no:		if ((i =+ pssiz) >= hshlen) i = 0;
 	return(rp);
 }
 
+/* BCD: The scanner; returns one token/symbol at a time.  No lex() yet :-).
+ * peeksym can be pushed to peek ahead at the next symbol.
+ * peekc similarly allows to peek ahead at the next character. */
 symbol() {
 	extern peeksym, peekc, eof, line;
 	extern csym, symbuf, namsiz, lookup, ctab, cval;
@@ -152,6 +161,10 @@ loop:
 	case 80:	/* = */
 		if (subseq(' ',0,1)) return(80);
 		c = symbol();
+		/* BCD: Parse =+ here, instead of +=, etc.  It's easier to parse the '='
+		 * and then modify it based on the next character.  Note this can cause
+		 * ambiguity when = is followed by a unary minus/star/address of, and
+		 * there's even a warning for that happening. */
 		if (c>=40 & c<=49)
 			return(c+30);
 		if (c==80)
@@ -211,24 +224,31 @@ com1:
 		return(getcc());
 
 	case 123:	/* letter */
+		/* BCD: Capture identifier into symbuf */
 		sp = symbuf;
 		if (mosflg) {
 			*sp++ = '.';
 			mosflg = 0;
 		}
 		while(ctab[c]==123 | ctab[c]==124) {
+			/* BCD: In v5, namsiz renamed to ncps */
 			if (sp<symbuf+namsiz) *sp++ = c;
 			c = getchar();
 		}
+		/* BCD: Ensure symbuf is NUL-padded for identifiers less than 8 characters.
+		 * Note, an 8-char identifier is not null terminated at all. */
 		while(sp<symbuf+namsiz)
 			*sp++ = '\0';
 		peekc = c;
 		csym = lookup();
 		if (csym[0]==1) {	/* keyword */
+			/* BCD: In v5, sizeof() was added and checked here. */
 			cval = csym[1];
 			return(19);
 		}
 		return(20);
+
+		/* BCD: In v5, checks for & vs. && and | vs. || were added here. */
 
 	case 127:	/* unknown */
 		error("Unknown character");
@@ -239,6 +259,12 @@ com1:
 	return(ctab[c]);
 }
 
+/* BCD: Commonly used in the lexical analyzer, enough to warrant a subroutine.
+ * If next character is 'c', then return 'b', else return 'a'.
+ * Used when two lexical tokens share a prefix, e.g. + and ++.
+ * The order of a, b is not what I would have expected; it is opposite of the
+ * ?: operator.
+ */
 subseq(c,a,b) {
 	extern peekc;
 
@@ -270,8 +296,13 @@ getcc()
 	char cp[];
 
 	cval = 0;
+	/* BCD: Below, cp later renamed to ccp to avoid confusion with other meaning of cp
+	 * throughout the compiler. */
 	cp = &cval;
 	cc = 0;
+	/* BCD: Note that multiple characters can be embedded in a character
+	 * constant, e.g. 'xy'.  This is permitted up to 'ncpw' (number of
+	 * characters per word). */
 	while((c=mapch('\'')) >= 0)
 		if(cc++ < ncpw)
 			*cp++ = c;
@@ -280,6 +311,9 @@ getcc()
 	return(21);
 }
 
+/* BCD: Parses a character constant that may contain an escape sequence.
+ * 'c' is the terminating character (single or double quote), which
+ * causes this to return -1. */
 mapch(c)
 {
 	extern peekc, line;
@@ -305,6 +339,7 @@ mapch(c)
 			return('\n');
 
 		case '0':
+			/* BCD: Later, support for any octal constant here would be added. */
 			return('\0');
 
 		case 'r':
@@ -319,6 +354,8 @@ mapch(c)
 	return(a);
 }
 
+/* BCD: Parses an expression.  Calls build() to push trees onto the
+ * expression stack. */
 tree() {
 	extern csym, ctyp, isn, fcval, peeksym, opdope, cp, cmst;
 	int csym[], opdope[], cp[], cmst[];
@@ -403,6 +440,7 @@ tand:
 	case 34:
 	/* ~ */
 	case 38:
+		/* BCD: complement (~) new in v3 */
 		if (andflg)
 			goto syntax;
 		goto oponst;
@@ -464,9 +502,16 @@ tand:
 		goto syntax;
 	andflg = 0;
 
+	/* BCD: I'm guessing this means "operator on stack".  Compare priority
+	 * of current symbol versus the top of stack symbol. */
 oponst:
+	/* BCD: p is the priority of the operator (see c0t.s).
+	 * COMMA is normally 07 and COLON is 14, but this is lowered
+	 * when initflg is set, when parsing a constant initializer.  The
+	 * comma is then used to separate the initializers of an array.  Colon? */
 	p = (opdope[o]>>9) & 077;
 opon1:
+	/* BCD: pp is the priority stack pointer.  Initial value on stack is 06. */
 	ps = *pp;
 	if (p>ps | p==ps & (opdope[o]&0200)!=0) { /* right-assoc */
 putin:
@@ -481,10 +526,13 @@ putin:
 			error("expression overflow");
 			exit(1);
 		}
+		/* BCD: Push operator/priority onto their stacks */
 		*++op = o;
 		*++pp = p;
 		goto advanc;
 	}
+
+	/* BCD: Or, pop from stack */
 	--pp;
 	switch (os = *op--) {
 
@@ -730,9 +778,11 @@ efftab 1;
 cctab 2;
 sptab 3;
 symbuf[4];
+/* BCD: From v2->v3, pssiz is increased from 8 to 9. */
 pssiz 9;
 namsiz 8;
 nwps 4;
+/* BCD: Below, zero initialization by default seems to be implemented now. */
 hshused;
 hshsiz 100;
 hshlen 900;	/* 9*hshsiz */
@@ -760,6 +810,7 @@ defsym;
 xdflg;
 csym;
 cval;
+/* BCD: Floating point constants also new in v3 */
 fcval 0;	/* a double number */
 fc1 0;
 fc2 0;

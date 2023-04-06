@@ -1,9 +1,15 @@
+/* BCD: Parse an external definition.
+ * Calls decl1() to parse the declarator, and then either
+ * cfunc() for a function definition or cinit() for a data
+ * definition.  An "extern" will call neither and simply put
+ * the name into the symbol table. */
 extdef() {
 	extern eof, cval, defsym;
 	extern csym, strflg, xdflg, peeksym, fcval;
 	int o, c, cs[], type, csym[], width, nel, ninit, defsym[];
 	char s[];
 	float sf;
+	/* BCD: The compiler is using 'double' itself, new in v3. */
 	double fcval;
 
 	if(((o=symbol())==0) | o==1)	/* EOF */
@@ -171,6 +177,9 @@ stmt:
 			if ((np[1]&030)!=030)	/* not array */
 				np = block(1, 36, 1, np[2]+1, np);
 			rcexpr(block(1,102,0,0,np), regtab);
+			/* BCD: Later, "simple gotos" would be recognized here, which only require
+			 * emitting a jmp instruction to a known label.  This is more optimal than
+			 * emitting an expression tree to pass 2. */
 			goto semi;
 
 		/* return */
@@ -186,6 +195,7 @@ stmt:
 			statement(0);
 			if ((o=symbol())==19 & cval==14) {  /* else */
 				o2 = isn++;
+				/* BCD: below easystmt() does not exist in V5. */
 				(easystmt()?branch:jump)(o2);
 				label(o1);
 				statement(0);
@@ -287,6 +297,8 @@ stmt:
 			deflab = isn++;
 			label(deflab);
 			goto stmt;
+
+		/* BCD: In v5, 'for' statement would be added. */
 		}
 
 		error("Unknown keyword");
@@ -324,6 +336,7 @@ syntax:
 	goto stmt;
 }
 
+/* BCD: Read a parenthesized expression */
 pexpr()
 {
 	auto o, t;

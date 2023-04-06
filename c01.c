@@ -1,3 +1,7 @@
+/* BCD: Updates the expression stack, pointed to by 'cp', when an
+ * operator is seen.  This applies precedence rules to either push
+ * the operator, or pop the stack args and apply it.  This also does
+ * some checks for illegal constructs. */
 build(op) {
 	extern cp[], cvtab, opdope[], maprel[];
 	auto p1[], t1, d1, p2[], t2, d2, p3[], t3, d3, t;
@@ -8,6 +12,7 @@ build(op) {
 		build(40);	/* + */
 		op = 36;	/* * */
 	}
+	/* BCD: Load arguments from stack (p1 only if unary; include p2 if binary. */
 	dope = opdope[op];
 	if ((dope&01)!=0) {	/* binary */
 		p2 = disarray(*--cp);
@@ -48,6 +53,7 @@ build(op) {
 
 	/* call */
 	case 100:
+		/* BCD: New in v3: fail if trying to call a non-function */
 		if ((t1&030) != 020)
 			error("Call of non-function");
 		*cp++ = block(2,100,decref(t1),24,p1,p2);
@@ -79,6 +85,7 @@ build(op) {
 		error("Illegal lvalue");
 		break;
 
+	/* BCD: All of the degree calculations below are new for v3. */
 	case 43:	/* / */
 	case 44:	/* % */
 	case 73:	/* =/ */

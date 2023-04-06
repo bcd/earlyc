@@ -120,6 +120,10 @@ label(l) {
 }
 
 
+/* BCD: Pop stack arguments after a function call.  The 2-byte and
+ * 4-byte versions probably run faster on the PDP-11.  The tst/cmp
+ * are not used later, they are just done to avoid any other side
+ * effects. */
 popstk(a) {
 	extern printf;
 
@@ -182,6 +186,7 @@ printd(n) {
 printo(n)
 {
 	int a;
+	/* BCD: Interesting that printo() uses recursion.  Small code size. */
 	if (a = (n>>3) & 017777)
 		printo(a);
 	putchar((n&07) + '0');
@@ -204,6 +209,10 @@ loop:
 	switch (c = *fmt++) {
 
 	case 'o':
+		/* BCD: octal moves to its own function, printo(), starting in v3.
+		 * printd() also created for decimals.  The common printn() function which
+		 * takes a base as one of its arguments is not used in pass 2 now.  This
+		 * is probably more optimal to specialize these. */
 		printo(x);
 		goto loop;
 
@@ -220,6 +229,7 @@ loop:
 		goto loop;
 
 	case 'c':
+		/* BCD: new in v3, printf() supports %c */
 		if (x)
 			putchar(x);
 		goto loop;
@@ -256,6 +266,7 @@ error(s, p1, p2) {
 	printf("%d: ", line);
 	printf(s, p1, p2);
 	putchar('\n');
+	/* BCD: In v5, flush() added here */
 	fout = f;
 }
 
