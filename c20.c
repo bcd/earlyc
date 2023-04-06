@@ -59,7 +59,9 @@ struct optab optab[] {
 	".end",	END,
 	0,	0};
 
+/* BCD: revbr equivalent to maprel in the compiler proper */
 char	revbr[] { JNE, JEQ, JGT, JLT, JGE, JLE, JHIS, JLOS, JHI, JLO };
+
 int	isn	20000;
 
 main(argc, argv)
@@ -98,6 +100,11 @@ char **argv;
 	lasta = firstr = lastr = sbrk(2);
 	maxiter = 0;
 	opsetup();
+
+	/* BCD: The main loop of C2:
+	 * Read each line of assembler source, parsing it to a "struct node" which identifies
+	 * it as a label or an operation (see table above), and add that onto the scan list.
+	 */
 	do {
 		isend = input();
 		movedat();
@@ -137,10 +144,12 @@ char **argv;
 		printf("%d skips over jumps\n", nskip);
 		printf("%d sob's added\n", nsob);
 		printf("%d redundant tst's\n", nrtst);
+		/* BCD: New to v6: literal elimination */
 		printf("%d literals eliminated\n", nlit);
 		printf("%dK core\n", ((lastr+01777)>>10)&077);
 		flush();
 	}
+	/* BCD: New to v6, add explicit exit() at end of main(). */
 	exit(0);
 }
 
@@ -409,6 +418,7 @@ oplook()
 	return(0);
 }
 
+/* BCD: Link instructions with a label operand and the labels themselves. */
 refcount()
 {
 	register struct node *p, *lp;
@@ -448,6 +458,10 @@ refcount()
 			decref(p);
 }
 
+/* BCD: Main optimization routine.  Called in a loop since one optimization may
+ * enable other one.  'nchange' is incremented anytime something changed,
+ * telling the caller to iterate() one more time afterwards.  Interestingly,
+ * there is no safety maximum here. */
 iterate()
 {
 	register struct node *p, *rp, *p1;
@@ -457,6 +471,7 @@ iterate()
 		if ((p->op==JBR||p->op==CBR||p->op==JSW) && p->ref) {
 			rp = nonlab(p->ref);
 			if (rp->op==JBR && rp->labno && p!=rp) {
+				/* BCD: Simplify branch to branch */
 				nbrbr++;
 				p->labno = rp->labno;
 				decref(p->ref);
@@ -466,6 +481,7 @@ iterate()
 			}
 		}
 		if (p->op==CBR && (p1 = p->forw)->op==JBR) {
+			/* BCD: Skip over jump */
 			rp = p->ref;
 			do
 				rp = rp->back;
@@ -482,6 +498,7 @@ iterate()
 			}
 		}
 		if (p->op==JBR || p->op==JMP) {
+			/* BCD: Remove unreachable instructions after jump */
 			while (p->forw && p->forw->op!=LABEL
 				&& p->forw->op!=EROU && p->forw->op!=END) {
 				nchange++;
@@ -494,6 +511,7 @@ iterate()
 			rp = p->forw;
 			while (rp && rp->op==LABEL) {
 				if (p->ref == rp) {
+					/* BCD: Also remove jump to self, which is a no-op. */
 					p->back->forw = p->forw;
 					p->forw->back = p->back;
 					p = p->back;
@@ -510,6 +528,7 @@ iterate()
 	}
 }
 
+/* BCD: Check for cross jumps (???) */
 xjump(ap)
 {
 	register int *p1, *p2, *p3;
@@ -658,6 +677,9 @@ struct node *ap1, *ap2;
 		while ((p1 = p1->back) && p1->op==LABEL);
 		p2 = p2->back;
 		if (equop(p1, p2)) {
+			/* BCD: common sequence before jmp.  My guess is this looks for
+			 * an insn that is executed on the true and false paths of a
+			 * conditional branch, and moves it before the branch unconditionally. */
 			p3 = insertl(p1);
 			p2->back->forw = p2->forw;
 			p2->forw->back = p2->back;

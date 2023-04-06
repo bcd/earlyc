@@ -8,10 +8,14 @@
 
 #include "c1h.c"
 
+/* BCD: maprel changes the operator from (A OP B) when switched to (B OP A).
+ * Thus, less than/greater than are swapped, but equal and not equal
+ * are left alone. */
 char	maprel[] {	EQUAL, NEQUAL, GREATEQ, GREAT, LESSEQ,
 			LESS, GREATQP, GREATP, LESSEQP, LESSP
 };
 
+/* BCD: notrel just negates a relational operator */
 char	notrel[] {	NEQUAL, EQUAL, GREAT, GREATEQ, LESS,
 			LESSEQ, GREATP, GREATQP, LESSP, LESSEQP
 };
@@ -39,6 +43,7 @@ char *argv[];
 		error("Missing temp file");
 		exit(1);
 	}
+	/* BCD: below, creat() had the mode argument added since V3 */
 	if ((fout = creat(argv[3], 0666)) < 0) {
 		error("Can't create %s", argv[3]);
 		exit(1);
@@ -119,6 +124,15 @@ struct table *table;
 		t2 = p2->type;
 		d2 = dcalc(p2, nrleft);
 	}
+	/* BCD: First scan the table for the matching opcode; then scan all
+	 * entries in the subtable (tabp) sequentially, looking for the first
+	 * match.  The match criteria is given by 4 chars, 2 describing the
+	 * left operand and 2 for the right (if BINARY).  The structure for
+	 * each is similar.  One byte stores the maximum degree of difficulty;
+	 * if this is exceeded, then matching fails.  The other, tabtypN,
+	 * is passed with the subtree to notcompat(), which if true will also
+	 * fail to match.
+	 */
 	for (; table->op!=op; table++)
 		if (table->op==0)
 			return(0);
@@ -254,6 +268,11 @@ struct table *atable;
 			nargs++;
 			nstack++;
 		}
+		/* BCD: The argument(s) to a function call are the same as a comma
+		 * expression, evaluated right to left.  Each argument is pushed
+		 * onto the stack via comarg().  Then the call itself is emitted
+		 * with a recursive call to cexpr().  Last, popstk() is used to
+		 * clear the stack arguments. */
 		tree = tree->tr2;
 		if(tree->op) {
 			while (tree->op==COMMA) {
@@ -328,6 +347,7 @@ struct table *atable;
 	if (table!=regtab)  {
 		if((r=cexpr(tree, regtab, reg))>=0) {
 	fixup:
+		/* BCD: If that succeeded, need to fixup the result. */
 			modf = isfloat(tree);
 			if (table==sptab || table==lsptab) {
 				if (tree->type==LONG) {
@@ -461,7 +481,11 @@ loop:
 		if (!isfloat(tree))
 			if (tree->op==DIVIDE || tree->op==ASDIV)
 				reg--;
-		return(reg);
+		return(reg); /* BCD: success! */
+
+	/* BCD: The values in the comments are what you put into the .s table files.
+	 * The cvopt program then converts these into a more compact form, using the
+	 * codes that are in the case statements.  This situation existed even in V2. */
 
 	/* A1 */
 	case 'A':

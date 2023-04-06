@@ -5,6 +5,8 @@
 
 #include "c1h.c"
 
+/* BCD: Many helper routines here */
+
 max(a, b)
 {
 	if (a>b)
@@ -12,6 +14,11 @@ max(a, b)
 	return(b);
 }
 
+/* BCD: From the Tour:
+ * The `degree of difficulty' computed is actually finer than the mere number of
+ * registers required; a constant is considered simpler than the address of a static
+ * or external, which is simpler than reference to a variable.
+ */
 degree(at)
 struct tnode *at;
 {
@@ -33,6 +40,7 @@ struct tnode *at;
 	return(t->degree);
 }
 
+/* BCD: Print a tree node, assembler-friendly */
 pname(ap, flag)
 struct tnode *ap;
 {
@@ -128,6 +136,8 @@ struct tnode *ap;
 		printf("_%.8s", &(p->nloc));
 }
 
+/* BCD: Yet another variation of dcalc(), which penalizes some
+ * byte-mode instructions */
 xdcalc(ap, nrleft)
 struct tnode *ap;
 {
@@ -145,6 +155,13 @@ struct tnode *ap;
 	return(d);
 }
 
+
+/* BCD: dcalc() is a layer above degree(), as it is not just based on Sethi-
+ * Ullman numbering, but other factors of difficulty.  Floating-point and
+ * forms of indirection are penalized further.  Also, if the estimated number
+ * of registers needed is bigger than the number available, penalize more.
+ * Not sure what the values here actually mean, but it is probably related
+ * to PDP-11 cycle counts. */
 dcalc(ap, nrleft)
 struct tnode *ap;
 {
@@ -185,6 +202,12 @@ struct tnode *ap;
 	return(p->degree <= nrleft? 20: 24);
 }
 
+/* BCD: The main routine for checking if a tree 'ap' has incompatible
+ * type with the spec given in 'ast'.  op is the parent operator.
+ * This routine could use some preprocessor love.
+ * See "types" in c1h.c for the bit definitions, also remember that
+ * composite types have multiple values shifted up.
+ */
 notcompat(ap, ast, op)
 struct tnode *ap;
 {
@@ -245,6 +268,9 @@ struct tnode *ap;
 	return(0);
 }
 
+/* BCD: Returns a character to be appended to an instruction mnemonic.
+ * Both 'float' and 'double' types will return 'f', else a zero character
+ * (which doesn't print anything). */
 isfloat(at)
 struct tnode *at;
 {
@@ -281,6 +307,7 @@ struct tnode *t;
 	return(reg);
 }
 
+/* BCD: get argument length of a simple type as it appears on the stack. */
 arlength(t)
 {
 	if (t>=PTR)
@@ -339,6 +366,10 @@ jmp	*L%d-L%d(r1)\n\
 L%d:\
 "};
 
+/* BCD: Special handling to emit switch statements.
+ * Considerable effort is done here to make switches efficient.  No doubt,
+ * the compiler itself depended on these techniques; observe the number
+ * of switch statements that are present in the source code here. */
 pswitch(afp, alp, deflab)
 struct swtab *afp, *alp;
 {
@@ -357,9 +388,21 @@ struct swtab *afp, *alp;
 		return;
 	ncase = lp-fp;
 	lp--;
+
+	/* BCD: The table ranges from 'afp' (first value) to 'alp' (last value). */
 	range = lp->swval - fp->swval;
+
 	/* direct switch */
 	if (range>0 && range <= 3*ncase) {
+		/* BCD: The canonical implementation of a jump table.  The minimum
+		 * value is subtracted off, to yield an index.  If the expression is
+		 * higher than any case value, then jump to the default.  Else,
+		 * scale the index by a pointer size (2x) and jump indirect.
+		 * This implementation works best when the case value are dense over
+		 * the range.
+		 *
+		 * If the range is too large, then this is skipped, to avoid making a
+		 * big jump table, when it would mostly have default entries. */
 		if (fp->swval)
 			printf("sub	$%o,r0\n", fp->swval);
 		printf(dirsw, range, deflab, isn, isn);
@@ -375,6 +418,10 @@ struct swtab *afp, *alp;
 	}
 	/* simple switch */
 	if (ncase<8) {
+		/* BCD: Alternate implementation as a variable length of array of
+		 * value/label pairs.  At most 8 of these also to save space.  The range
+		 * does not have to be continuous though.  Uses indirect addressing.
+		 * The range is irrelevant here. */
 		i = isn++;
 		j = isn++;
 		printf(simpsw, i, j, isn, isn, j, i, i);
@@ -425,6 +472,7 @@ esw:
 	printf(".text\n");
 }
 
+/* BCD: Sort the array of switch statement values (the 'case's). */
 sort(afp, alp)
 struct swtab *afp, *alp;
 {
@@ -456,6 +504,7 @@ struct swtab *afp, *alp;
 	return(0);
 }
 
+/* BCD: Return tree value if it is an integer constant power of 2. */
 ispow2(atree)
 {
 	register int d;
@@ -470,6 +519,8 @@ ispow2(atree)
 	return(0);
 }
 
+/* BCD: Convert multiply/divide into equivalent shift when the
+ * operand is a constant integer power of two */
 pow2(atree)
 struct tnode *atree;
 {
@@ -484,6 +535,7 @@ struct tnode *atree;
 		tree->op = d==TIMES? LSHIFT:
 			  (d==DIVIDE? RSHIFT:
 			  (d==ASTIMES? ASLSH: ASRSH));
+		/* BCD: New in v6, the new tree might be further optimized. */
 		tree = optim(tree);
 	}
 	return(tree);
@@ -578,6 +630,10 @@ label(l)
 	printf("L%d:", l);
 }
 
+/* BCD: Pop stack arguments after a function call.  The 2-byte and
+ * 4-byte versions probably run faster on the PDP-11.  The tst/cmp
+ * are not used later, they are just done to avoid any other side
+ * effects. */
 popstk(a)
 {
 	switch(a) {

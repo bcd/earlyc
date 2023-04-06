@@ -32,7 +32,9 @@ struct kwtab {
 	"float",	FLOAT,
 	"double",	DOUBLE,
 	"struct",	STRUCT,
+	/* BCD: 'long' is new in v6. */
 	"long",		LONG,
+	/* BCD: v7 will add unsigned, union, and short. */
 	"auto",		AUTO,
 	"extern",	EXTERN,
 	"static",	STATIC,
@@ -50,6 +52,7 @@ struct kwtab {
 	"default",	DEFAULT,
 	"for",		FOR,
 	"sizeof",	SIZEOF,
+	/* BCD: v7 will also add typedef and enum here. */
 	0,		0,
 };
 
@@ -159,6 +162,7 @@ findkw()
 	char *wp;
 
 	wp = symbuf;
+	/* BCD: Skip over leading dots in symbol names; this would be removed in v7. */
 	if (*wp=='.')
 		wp++;
 	for (kp=kwtab; (p2 = kp->kwname); kp++) {
@@ -205,6 +209,7 @@ loop:
 	switch(ctab[c]) {
 
 	case INSERT:		/* ignore newlines */
+		/* BCD: This is ASCII character 0x01 (SOH - Start of Heading) */
 		inhdr = 1;
 		c = getchar();
 		goto loop;
@@ -231,6 +236,10 @@ loop:
 	case ASSIGN:
 		if (subseq(' ',0,1)) return(ASSIGN);
 		c = symbol();
+		/* BCD: Parse =+ here, instead of +=, etc.  It's easier to parse the '='
+		 * and then modify it based on the next character.  Note this can cause
+		 * ambiguity when = is followed by a unary minus/star/address of, and
+		 * there's even a warning for that happening. */
 		if (c>=PLUS && c<=EXOR) {
 			if (spnextchar() != ' '
 			 && (c==MINUS || c==AND || c==TIMES)) {
@@ -275,6 +284,11 @@ loop:
 	case PERIOD:
 	case DIGIT:
 		peekc = c;
+		/* BCD: No supported for hex integers yet, only decimal or octal.
+		 * getnum is not defined here, it must be an assembler routine.  Returns
+		 * FCON when it parses a float/double; in that case, fcval holds the
+		 * 4 words of the value, and cval is set here to a label that acts as a
+		 * pointer to it. */
 		if ((c=getnum(c=='0'?8:10)) == FCON)
 			cval = isn++;
 		return(c);
@@ -286,6 +300,7 @@ loop:
 		return(getcc());
 
 	case LETTER:
+		/* BCD: Capture identifier into symbuf */
 		sp = symbuf;
 		if (mosflg) {
 			*sp++ = '.';
@@ -295,6 +310,8 @@ loop:
 			if (sp<symbuf+ncps) *sp++ = c;
 			c = getchar();
 		}
+		/* BCD: Ensure symbuf is NUL-padded for identifiers less than 8 characters.
+		 * Note, an 8-char identifier is not null terminated at all. */
 		while(sp<symbuf+ncps)
 			*sp++ = '\0';
 		peekc = c;
@@ -386,6 +403,9 @@ getcc()
 	cval = 0;
 	ccp = &cval;
 	cc = 0;
+	/* BCD: Note that multiple characters can be embedded in a character
+	 * constant, e.g. 'xy'.  This is permitted up to NCPW (number of
+	 * characters per word). */
 	while((c=mapch('\'')) >= 0)
 		if(cc++ < NCPW)
 			*ccp++ = c;
@@ -431,6 +451,8 @@ loop:
 
 		case 'b':
 			return('\b');
+
+		/* BCD: \f (form feed) and \v (vertical tab) added in v7. */
 
 		case '0': case '1': case '2': case '3':
 		case '4': case '5': case '6': case '7':
@@ -485,6 +507,8 @@ tree()
 advanc:
 	switch (o=symbol()) {
 
+	/* BCD: Operands are pushed onto the cm stack (cp).  andflg is set
+	 * to 1 indicating that the next token cannot also be an operand. */
 	case NAME:
 		cs = csym;
 		if (cs->hclass==0 && cs->htype==0)
@@ -530,6 +554,7 @@ tand:
 
 	case INCBEF:
 	case DECBEF:
+		/* BCD: Converts preincrement to postincrement */
 		if (andflg)
 			o =+ 2;
 		goto oponst;
@@ -537,12 +562,14 @@ tand:
 	case COMPL:
 	case EXCLA:
 	case SIZEOF:
+		/* BCD: None of these are postfix operators */
 		if (andflg)
 			goto syntax;
 		goto oponst;
 
 	case MINUS:
 		if (!andflg)  {
+			/* BCD: Convert to prefix operator NEG */
 			if ((peeksym=symbol())==FCON) {
 				fcval = - fcval;
 				goto advanc;
@@ -559,6 +586,7 @@ tand:
 
 	case AND:
 	case TIMES:
+		/* BCD: As prefix operator, convert AND to AMPER and TIMES to STAR. */
 		if (andflg)
 			andflg = 0; else
 			if(o==AND)
@@ -569,6 +597,7 @@ tand:
 
 	case LPARN:
 		if (andflg) {
+			/* BCD: As postfix operator, convert to function call */
 			o = symbol();
 			if (o==RPARN)
 				o = MCALL;
@@ -588,6 +617,8 @@ tand:
 
 	case DOT:
 	case ARROW:
+		/* BCD: Inform symbol table lookup that next name should be member
+		 * of structure. */
 		mosflg++;
 		break;
 
@@ -640,6 +671,7 @@ opon1:
 	case MCALL:
 		*cp++ = block(0,0,0,0);	/* 0 arg call */
 		os = CALL;
+		/* BCD: v6 changes a goto to a break, which works just the same */
 		break;
 
 	case INCBEF:

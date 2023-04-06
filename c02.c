@@ -249,6 +249,7 @@ stmt:
 	case EOF:
 		error("Unexpected EOF");
 	case SEMI:
+	/* BCD: case RBRACE removed since v5 */
 		return;
 
 	case LBRACE:
@@ -270,6 +271,9 @@ stmt:
 		switch(cval) {
 
 		case GOTO:
+			/* BCD: If the argument is just a name/label, then use 'simplegoto' to
+			 * emit a jump to it.  Otherwise the argument can be any expression,
+			 * which is evaluated to an address... this is 'computed goto'. */
 			if (o1 = simplegoto())
 				branch(o1);
 			else 
@@ -283,6 +287,8 @@ stmt:
 		case IF:
 			np = pexpr();
 			o2 = 0;
+
+			/* BCD: Optimize certain if statements */
 			if ((o1=symbol())==KEYW) switch (cval) {
 			case GOTO:
 				if (o2=simplegoto())
@@ -310,8 +316,15 @@ stmt:
 			case CONTIN:
 				o2 = contlab;
 			simpif:
+				/* BCD: When the if statement is a simple jump, either by void return,
+				 * goto, break, or continue, just use 'cbranch' to evalate and
+				 * conditionally branch.  Notice the fallthrough... */
 				chconbrk(o2);
 				cbranch(np, o2, 1);
+
+				/* BCD: When the if statement is a computed goto or value return, the
+				 * code was already emitted above, and this does lookahead for an 'else'
+				 * block */
 			hardif:
 				if ((o=symbol())!=SEMI)
 					goto syntax;
@@ -320,6 +333,8 @@ stmt:
 				peeksym = o1;
 				return;
 			}
+
+			/* Handle if statements that are general statements */
 			peeksym = o1;
 			cbranch(np, o1=isn++, 0);
 			statement(0);
@@ -427,6 +442,8 @@ stmt:
 
 	case NAME:
 		if (nextchar()==':') {
+			/* BCD: Parse the label statement.  Note its symbol table entry is marked
+			 * as a static array, but its hoffset stores a label number. */
 			peekc = 0;
 			o1 = csym;
 			if (o1->hclass>0) {
@@ -612,6 +629,7 @@ blkhed()
 blkend() {
 	register struct hshtab *cs;
 
+	/* BCD: Remove all local symbols from the hshtab.  (e.g. labels). */
 	for (cs=hshtab; cs<hshtab+hshsiz; cs++) {
 		if (cs->name[0]) {
 			if (cs->hclass==0 && (cs->hflag&FNUND)==0) {

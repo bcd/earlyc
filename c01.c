@@ -28,6 +28,8 @@ build(op) {
 		build(PLUS);
 		op = STAR;
 	}
+
+	/* BCD: Load arguments from stack (p1 only if unary; include p2 if binary. */
 	dope = opdope[op];
 	if ((dope&BINARY)!=0) {
 		p2 = chkfun(disarray(*--cp));
