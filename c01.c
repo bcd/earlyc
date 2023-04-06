@@ -1,3 +1,7 @@
+/* BCD: Updates the expression stack, pointed to by 'cp', when an
+ * operator is seen.  This applies precedence rules to either push
+ * the operator, or pop the stack args and apply it.  This also does
+ * some checks for illegal constructs. */
 build(op) {
 	extern cp[], error, block, opdope[], maprel[], chklval;
 	extern chkw, cvtab, lintyp, dcalc;
@@ -9,6 +13,7 @@ build(op) {
 		build(40);  /* + */
 		op = 36;
 	}
+	/* BCD: Load arguments from stack (p1 only if unary; include p2 if binary. */
 	dope = opdope[op];
 	if ((dope&01)!=0) {
 		p2 = *--cp;
@@ -66,6 +71,9 @@ goon:
 		chkw(p1);
 	if ((dope&040)!=0)		/* word operand on right? */
 		chkw(p2);
+
+	/* BCD: Handle unary operators.  First try to fold at compile-time;
+	 * else push a tree node for the operator */
 	if ((dope&01)!=0) {		/* binary op? */
 		cvn = cvtab[9*lintyp(t1)+lintyp(t2)];
  		if ((dope&010)!=0)  {	/* assignment? */
@@ -109,6 +117,8 @@ nocv:;		}
 			d = max(d1,d2);
 		if ((dope&04)!=0)
 			t = 0;		/* relational is integer */
+
+	/* BCD: Constant folding would be added here in the future. */
 		*cp++ = block(2,op,t,d,p1,p2);
 		return;
 	}
@@ -164,6 +174,7 @@ error(s, p1, p2) {
 	printf("%d: ", line);
 	printf(s, p1, p2);
 	putchar('\n');
+	/* BCD: flush() would be added here in the future. */
 	fout = f;
 }
 

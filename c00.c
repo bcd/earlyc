@@ -4,9 +4,20 @@ Copyright 1972 Bell Telephone Laboratories, Inc.
 
 */
 
+/* BCD: Tree allocation begins at ospace.  Up to 250 words can be
+ * used.  This deliberately overwrites the init() and main()
+ * functions after they are not needed anymore -- at least, up to
+ * the point of the main loop. */
 ossiz 250;
 ospace() {}	/* fake */
 
+/* BCD: init() populates all keywords in the symbol table.
+ * The first word is later renamed to "hclass", and is set to 1
+ * which is KEYWC, indicating a keyword.  The second word is the
+ * keyword number, later renamed to "htype".
+ *
+ * When the code overwriting was eliminated in v5, this code was
+ * merged back into main() itself. */
 init(s, t)
 char s[]; {
 	extern lookup, symbuf, namsiz;
@@ -32,10 +43,13 @@ int argv[]; {
 		error("Arg count");
 		exit(1);
 	}
+	/* BCD: arguments are source file, intermediate tree file, and
+	   intermediate strings file. */
 	if((fin=open(argv[1],0))<0) {
 		error("Can't find %s", argv[1]);
 		exit(1);
 	}
+	/* BCD: creat was changed to fcreat in v5. */
 	if((fout=creat(argv[2], 017))<0) {
 		error("Can't create %s", argv[2]);
 		exit(1);
@@ -69,6 +83,9 @@ int argv[]; {
 	exit(nerror!=0);
 }
 
+/* BCD: Returns symtab entry for a name 'symbuf', or create it if
+ * it doesn't exist.  This first computes a hash on the name
+ * to determine where in the table to look first. */
 lookup() {
 	extern hshtab[], hshsiz, pssiz, symbuf[];
 	extern hshlen, hshused, exit, error, nwps;
@@ -105,6 +122,9 @@ no:		if ((i =+ pssiz) >= hshlen) i = 0;
 	return(rp);
 }
 
+/* BCD: The scanner; returns one token/symbol at a time.  No lex() yet :-).
+ * peeksym can be pushed to peek ahead at the next symbol.
+ * peekc similarly allows to peek ahead at the next character. */
 symbol() {
 	extern peeksym, peekc, eof, getchar, subseq, error, line;
 	extern csym[], getstr, symbuf, namsiz, lookup[], ctab, cval;
@@ -146,6 +166,10 @@ loop:
 	case 80:	/* = */
 		if (subseq(' ',0,1)) return(80);
 		c = symbol();
+		/* BCD: Parse =+ here, instead of +=, etc.  It's easier to parse the '='
+		 * and then modify it based on the next character.  Note this can cause
+		 * ambiguity when = is followed by a unary minus/star/address of, and
+		 * there's even a warning for that happening. */
 		if (c>=40 & c<=49)
 			return(c+30);
 		if (c==80)
@@ -170,6 +194,7 @@ loop:
 com:
 		c = getchar();
 com1:
+		/* BCD: In v5, below becomes a switch statement. */
 		if (c=='\0') {
 			eof++;
 			error("Nonterminated comment");
@@ -186,6 +211,11 @@ com1:
 		goto loop;
 
 	case 124:	/* number */
+		/* BCD: No supported for hex integers yet, only decimal or octal.
+		 * In v5, most of this is moved to a separate function, getnum().  Returns
+		 * FCON when it parses a float/double; in that case, fcval holds the
+		 * 4 words of the value, and cval is set here to a label that acts as a
+		 * pointer to it. */
 		cval = 0;
 		if (c=='0')
 			b = 8; else
@@ -204,20 +234,27 @@ com1:
 		return(getcc());
 
 	case 123:	/* letter */
+		/* BCD: Capture identifier into symbuf */
 		sp = symbuf;
 		while(ctab[c]==123 | ctab[c]==124) {
+			/* BCD: In v5, namsiz renamed to ncps */
 			if (sp<symbuf+namsiz) *sp++ = c;
 			c = getchar();
 		}
+		/* BCD: Ensure symbuf is NUL-padded for identifiers less than 8 characters.
+		 * Note, an 8-char identifier is not null terminated at all. */
 		while(sp<symbuf+namsiz)
 			*sp++ = '\0';
 		peekc = c;
 		csym = lookup();
 		if (csym[0]==1) {	/* keyword */
+			/* BCD: Later, sizeof() was added and checked here. */
 			cval = csym[1];
 			return(19);
 		}
 		return(20);
+
+		/* BCD: Later, checks for & vs. && and | vs. || were added here. */
 
 	case 127:	/* unknown */
 		error("Unknown character");
@@ -228,6 +265,12 @@ com1:
 	return(ctab[c]);
 }
 
+/* BCD: Commonly used in the lexical analyzer, enough to warrant a subroutine.
+ * If next character is 'c', then return 'b', else return 'a'.
+ * Used when two lexical tokens share a prefix, e.g. + and ++.
+ * The order of a, b is not what I would have expected; it is opposite of the
+ * ?: operator.
+ */
 subseq(c,a,b) {
 	extern getchar, peekc;
 
@@ -256,8 +299,13 @@ getcc()
 	char cp[];
 
 	cval = 0;
+	/* BCD: Below, cp later renamed to ccp to avoid confusion with other meaning of cp
+	 * throughout the compiler. */
 	cp = &cval;
 	cc = 0;
+	/* BCD: Note that multiple characters can be embedded in a character
+	 * constant, e.g. 'xy'.  This is permitted up to 'ncpw' (number of
+	 * characters per word). */
 	while((c=mapch('\'')) >= 0)
 		if(cc++ < ncpw)
 			*cp++ = c;
@@ -266,6 +314,9 @@ getcc()
 	return(21);
 }
 
+/* BCD: Parses a character constant that may contain an escape sequence.
+ * 'c' is the terminating character (single or double quote), which
+ * causes this to return -1. */
 mapch(c)
 {
 	extern peekc, line;
@@ -291,6 +342,7 @@ mapch(c)
 			return('\n');
 
 		case '0':
+			/* BCD: Later, support for any octal constant here would be added. */
 			return('\0');
 
 		case 'r':
@@ -305,6 +357,8 @@ mapch(c)
 	return(a);
 }
 
+/* BCD: Parses an expression.  Calls build() to push trees onto the
+ * expression stack. */
 tree() {
 	extern symbol, block, csym[], ctyp, isn,
 		peeksym, opdope[], build, error, cp[], cmst[],
@@ -369,6 +423,7 @@ tand:
 
 	/* ! */
 	case 34:
+		/* BCD: complement (~) and sizeof() were added here later. */
 		if (andflg)
 			goto syntax;
 		goto oponst;
@@ -426,9 +481,16 @@ tand:
 		goto syntax;
 	andflg = 0;
 
+	/* BCD: I'm guessing this means "operator on stack".  Compare priority
+	 * of current symbol versus the top of stack symbol. */
 oponst:
+	/* BCD: p is the priority of the operator (see c0t.s).
+	 * COMMA is normally 07 and COLON is 14, but this is lowered
+	 * when initflg is set, when parsing a constant initializer.  The
+	 * comma is then used to separate the initializers of an array.  Colon? */
 	p = (opdope[o]>>9) & 077;
 opon1:
+	/* BCD: pp is the priority stack pointer.  Initial value on stack is 06. */
 	ps = *pp;
 	if (p>ps | p==ps & (opdope[o]&0200)!=0) { /* right-assoc */
 putin:
@@ -443,10 +505,13 @@ putin:
 			error("expression overflow");
 			exit(1);
 		}
+		/* BCD: Push operator/priority onto their stacks */
 		*++op = o;
 		*++pp = p;
 		goto advanc;
 	}
+
+	/* BCD: Or, pop from stack */
 	--pp;
 	switch (os = *op--) {
 

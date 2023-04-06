@@ -1,3 +1,5 @@
+
+/* BCD: Create and evaluate a conditional branch tree node. */
 jumpc(tree, lbl, cond)
 int tree[];
 {
@@ -6,6 +8,10 @@ int tree[];
 	rcexpr(block(1,easystmt()+103,tree,lbl,cond),cctab);
 }
 
+/* BCD: The frontend (C01) rcexpr writes the tree onto intermediate
+ * output for processing by the second pass (C02).  The two passes
+ * both have 'rcexpr' with the same calling conventions, suggesting
+ * that the two could be combined here. */
 rcexpr(tree, table)
 int tree[], table;
 {

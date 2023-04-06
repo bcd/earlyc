@@ -31,6 +31,8 @@ char argv[][];
 		error("Arg count");
 		exit(1);
 	}
+
+	/* BCD: below, changed to buffered I/O for open/creat by v5. */
 	if((fin=open(argv[1],0))<0) {
 		error("Cant't find %s", argv[1]);
 		exit(1);
@@ -47,6 +49,11 @@ char argv[][];
 	tabtab[3] = sptab;
 	while(c=getchar()) {
 		if(c=='#') {
+			/* BCD: Hash signals a tree to be evaluated.
+			 * tree is the tree itself
+			 * table dictates how to compile it.
+			 * line is for debugging.
+			 */
 			sp = ospace;
 			c = getwrd();
 			tree = getwrd();
@@ -54,8 +61,11 @@ char argv[][];
 			line = getwrd();
 			while(c--)
 				*sp++ = getwrd();
+			/* BCD: In v5, a zero table indicates a switch statement.  This version
+			 * emits switches in pass 1.  v5 also optimizes the tree before calling
+			 * rcexpr. */
 			rcexpr(tree, table, 0);
-		} else
+		} else /* BCD: Any other char is emitted as-is to assembler. */
 			putchar(c);
 	}
 	flush();
@@ -64,6 +74,8 @@ char argv[][];
 
 match(tree, table, nreg)
 int tree[], table[]; {
+	/* BCD: putting externs inside functions for only the needed functions
+	 * reduces the overall size of the symbol table. */
 	extern opdope[], dcalc, notcompat;
 	int op, d1, d2, t1, t2, p1[], p2[];
 	char mp[];
@@ -82,11 +94,23 @@ int tree[], table[]; {
 		t2 = p2[1];
 		d2 = dcalc(p2, nreg);
 	}
+	/* BCD: First scan the table for the matching opcode; then scan all
+	 * entries in the subtable (tabp) sequentially, looking for the first
+	 * match.  The match criteria is given by 4 chars, 2 describing the
+	 * left operand and 2 for the right (if BINARY).  The structure for
+	 * each is similar.  One byte stores the maximum degree of difficulty;
+	 * if this is exceeded, then matching fails.  The other, tabtypN,
+	 * is passed with the subtree to notcompat(), which if true will also
+	 * fail to match.
+	 */
 	while(*table) {
 		if (*table++ == op) goto foundop;
 		table++;
 	}
 	return(0);
+	/* BCD: v5 implements the below with a more structured 'for' loop with
+	 * continue statements; 'for' is not present yet, and 'continue' although
+	 * supported by the compiler, is not used within it yet. */
 foundop:
 	table = *table;
 nxtry:
@@ -110,6 +134,21 @@ notyet:
 	goto nxtry;
 }
 
+/* BCD: The entry point into the real code generator.
+ * atree - tree expression to be evaluated
+ * atable - this controls how code is emitted:
+ *    regtab - most applicable, puts its result in a register
+ *    cctab - used only to set the condition codes.  Used when the
+ *       expression is inside a conditional statement (if/while/etc.)
+ *    sptab - emit result onto the stack.  Note: this may be PDP-11 specific.
+ *       Some architectures do not permit writing a value directly to stack
+ *       without need of a register.
+ *    efftab - evaluate for side effects only; used for expression statements.
+ * reg - regno where the result should be placed.
+ *
+ * Returns the register number where the result was actually placed.
+ */
+
 rcexpr(tree, table, reg)
 int tree[]; {
 	extern cexpr, regtab, cctab, sptab, printf, error;
@@ -123,17 +162,25 @@ int tree[]; {
 	}
 	if (cexpr(tree, table, reg))
 		return;
+	/* BCD: If table is not regtab, and it couldn't be evaluated, then
+	 * fall back to regtab and try again...  */
 	if (table!=regtab) 
 		if(cexpr(tree, regtab, reg)) {
+		/* BCD: If that succeeded, need to fixup the result. */
 			if (table==sptab)
 				printf("mov	r%d,-(sp)\n", reg);
-			if (table==cctab)
+			if (table==cctab) /* BCD: For cctab, emit tst instruction */
 				printf("tst	r%d\n", reg);
 			return;
 		}
 	error("No match for op %d", *tree);
 }
-
+/* BCD: From the Tour:
+ * cexpr tries to find an entry applicable to the given tree in the given table, and
+ * returns -1 if no such entry is found, letting rcexpr try again with a different
+ * table.  A successful match yields a string containing both literal characters
+ * which are written out and pseudo-operations, or macros, which are expanded.
+ * BCD: The return value when matching returns a register number >=0. */
 cexpr(tree, table, reg)
 int tree[][], table[]; {
 	extern match, nreg, printf, pname, putchar, regtab;
@@ -158,6 +205,8 @@ int tree[][], table[]; {
 		*tree = 101;
 		tree[2] = r;		/* save arg length */
 	}
+	/* BCD: Some special cases first, where the emitted code requires some conditional
+	 * branch statements.  */
 	if(c==90) {		/* ? */
 		cbranch(tree[3], c=isn++, 0, reg);
 		rcexpr(tree[4][3], table, reg);
@@ -171,6 +220,8 @@ int tree[][], table[]; {
 		return(0);
 	p1 = tree[3];
 	p2 = tree[4];
+	/* BCD: If a match is found, perform the expansion indicated by
+	 * tabstring. */
 loop:
 	switch(c = *string++) {
 
@@ -179,7 +230,11 @@ loop:
 		if (*p==101 & p[2]>0) {
 			popstk(p[2]);
 		}
-		return(1);
+		return(1); /* BCD: success! */
+
+	/* BCD: The values in the comments are what you put into the .s table files.
+	 * The cvopt program then converts these into a more compact form, using the
+	 * codes that are in the case statements.  This situation existed even in V2. */
 
 	/* A1 */
 	case 'A':
@@ -195,7 +250,7 @@ loop:
 	case 'O':
 		p = tree;
 	adr:
-		pname(p);
+		pname(p); /* BCD: print operand (either tree, or its left/right operands */
 		goto loop;
 
 	/* I */
@@ -203,7 +258,7 @@ loop:
 		if ((c = *string)=='\'')
 			string++; else
 			c = 0;
-		prins(*tree, c);
+		prins(*tree, c); /* BCD: print operation mnemonic from tree op */
 		goto loop;
 
 	/* B1 */
@@ -242,7 +297,7 @@ pb1:
 	case 'F':
 		p = p2[3];
 	const:
-		printf("%o", p);
+		printf("%o", p); /* BCD: print octal constant in left/right operand */
 		goto loop;
 
 	/* F */

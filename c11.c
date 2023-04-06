@@ -120,6 +120,10 @@ label(l) {
 }
 
 
+/* BCD: Pop stack arguments after a function call.  The 2-byte and
+ * 4-byte versions probably run faster on the PDP-11.  The tst/cmp
+ * are not used later, they are just done to avoid any other side
+ * effects. */
 popstk(a) {
 	extern printf;
 
@@ -246,6 +250,8 @@ error(s, p1, p2) {
 	printf("%d: ", line);
 	printf(s, p1, p2);
 	putchar('\n');
+	/* BCD: In v5, flush() added here */
 	fout = f;
 }
 
+/* BCD: In v5, support for signed octals added here. */
