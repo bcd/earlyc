@@ -487,6 +487,7 @@ forstmt()
 	label(contlab);
 	if ((o=symbol()) != SEMI) {		/* test part */
 		peeksym = o;
+		/* BCD: below could have just called cbranch() */
 		rcexpr(block(1,CBRANCH,tree(),brklab,0), cctab);
 		if ((o=symbol()) != SEMI)
 			return(o);

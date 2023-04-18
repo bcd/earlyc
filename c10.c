@@ -99,6 +99,9 @@ char *argv[];
 	exit(nerror!=0);
 }
 
+/* BCD: Check whether a tree matches any instruction
+ * specification in the given match.  Returns the specific instruction
+ * that matched on exception, or a NULL/zero pointer on failure. */
 char *match(atree, table, nrleft)
 struct tnode *atree;
 struct table *table;
@@ -114,6 +117,9 @@ struct table *table;
 		table = sptab;
 	op = tree->op;
 	dope = opdope[op];
+
+	/* BCD: Note, this works on leaf nodes also, in which case the
+	 * first operand spec is used to match on the whole tree itself. */
 	if ((dope&LEAF) == 0)
 		p1 = tree->tr1;
 	else
@@ -193,6 +199,7 @@ struct table *atable;
 
 	case SETREG:
 		nreg = tree->type-1;
+		/* BCD: oops, this doesn't specify a return value! */
 		return;
 
 	case CBRANCH:
@@ -200,6 +207,8 @@ struct table *atable;
 		return(0);
 
 	case INIT:
+		/* BCD: Called to emit a constant expression for use in an initializer, which
+		 * is not just a simple constant. */
 		if (tree->tr1->op == AMPER)
 			tree->tr1 = tree->tr1->tr1;
 		if (tree->tr1->op!=NAME && tree->tr1->op!=CON)
@@ -209,7 +218,7 @@ struct table *atable;
 		return(0);
 
 	case EXCLA:
-		/* BCD: Move the negation of !(A OP B) into OP. */
+		/* BCD: Move the negation of !(A OP B) into OP, before continuing. */
 		if ((opdope[tree->tr1->op] & RELAT) != 0) {
 			tree = tree->tr1;
 			tree->op = notrel[tree->op - EQUAL];
@@ -219,7 +228,9 @@ struct table *atable;
 	case RFORCE:
 		/* BCD: RFORCE just forces its operand into R0.  Used for return
 		 * values and the switch statement operand, since those are
-		 * implemented by some hardcoded assembler (see 'pswitch'). */
+		 * implemented by some hardcoded assembler (see 'pswitch').  If the
+		 * evaluation of the operand is already in R0, then the mov can be
+		 * omitted. */
 		if((r=rcexpr(tree->tr1, table, reg)) != 0)
 			printf("mov%c	r%d,r0\n", isfloat(tree->tr1), r);
 		return(0);
@@ -276,7 +287,8 @@ struct table *atable;
 	case DIVIDE:
 	case ASTIMES:
 	case ASDIV:
-		/* BCD: Convert multiply/divide of powers of 2 to shifts. */
+		/* BCD: Convert multiply/divide of powers of 2 to shifts, before continuing.
+		 * Not sure why this is done here instead of in optim(). */
 		pow2(tree);
 	}
 
@@ -357,6 +369,8 @@ struct table *table;
 	 * use predeclared tree nodes that store those. */
 
 	if ((opd&RELAT||c==LOGAND||c==LOGOR||c==EXCLA) && table!=cctab) {
+		/* BCD: Handle conditional evaluation when not using cctab; this
+		 * must return a value of 0 or 1, but short circuit rules still apply. */
 		cbranch(tree, c=isn++, 1, reg);
 		rcexpr(&czero, table, reg);
 		branch(isn, 0);
@@ -366,6 +380,7 @@ struct table *table;
 		return(reg);
 	}
 	if(c==QUEST) {
+		/* Handle the ternary operator; the tables only work up to binaries. */
 		if (table==cctab)
 			return(-1);
 		cbranch(tree->tr1, c=isn++, 0, reg);
@@ -424,9 +439,16 @@ struct table *table;
 	}
 
 	/* BCD: Call match() to find the first option that matches the tree.
+	 * Below, what is cregtab?  My guess is some test table that could be
+	 * added to the compiler for experimenting with new rules.
 	 */
 	if (table==cregtab)
 		table = regtab;
+
+	/* BCD: The second call to match() below is the normal case; if it
+	 * returns zero, then return no match found.  A non-cctab postincrement/
+	 * postdecrement will also try using efftab first (post operations are
+	 * by definition side-effects. */
 	if (table!=cctab || c==INCAFT || c==DECAFT
 	 || (opt = match(tree, efftab, nreg-reg)) == 0)
 		if ((opt=match(tree, table, nreg-reg))==0) {
@@ -441,7 +463,8 @@ struct table *table;
 loop:
 	if ((c = *string++) & 0200) {
 		/* BCD: when bit 8 of a 7-bit ASCII character is set, use that
-		 * to insert a tab onto the output. */
+		 * to insert a tab onto the output.  I'm guessing this prints out
+		 * nicely aligned assembler that is actually human readable. */
 		c =& 0177;
 		putchar('\t');
 	}
@@ -465,24 +488,24 @@ loop:
 
 	/* A1 */
 	case 'A':
-		p = p1;
+		p = p1; /* BCD: print left operand */
 		goto adr;
 
 	/* A2 */
 	case 'B':
-		p = p2;
+		p = p2; /* BCD: print right operand */
 		goto adr;
 
 	/* A */
 	case 'O':
-		p = tree;
+		p = tree; /* BCD: print tree operator */
 	adr:
 		c = 0;
 		if (*string=='\'') {
 			c++;
 			string++;
 		}
-		pname(p, c); /* BCD: print operand (either tree, or its left/right operands */
+		pname(p, c); /* BCD: print operand (either tree, or its left/right operands) */
 		goto loop;
 
 	/* I */
@@ -504,12 +527,12 @@ loop:
 
 	/* BF */
 	case 'P':
-		p = tree;
+		p = tree; /* BCD: print suffix (byte or float) depending on tree type */
 		goto pb1;
 
 	/* B2 */
 	case 'D':
-		p = p2;
+		p = p2; /* BCD: print suffix depending on operand 2 type */
 	pbyte:
 		if (p->type==CHAR)
 			putchar('b');
@@ -539,13 +562,13 @@ loop:
 
 	/* F */
 	case 'G':
-		p = p1;
+		p = p1; /* BCD: Recursively evaluate first subtree */
 		flag = 01;
 		goto subtre;
 
 	/* S */
 	case 'K':
-		p = p2;
+		p = p2; /* BCD: Recursively evaluate second subtree */
 		flag = 02;
 		goto subtre;
 
@@ -556,6 +579,13 @@ loop:
 
 	subtre:
 		ctable = regtab;
+		/* BCD: Next character in string contains bit flags which have been encoded into
+		 * an ASCII uppercase letter:
+		 * Bit 0: Set if ??? deferencing should occur...
+		 * Bit 1: Set if sptab should be used.
+		 * Bit 2: Set if cctab should be used.
+		 * Bit 3: Used to decide which register to reload into.
+		 */
 		c = *string++ - 'A';
 		if ((c&02)!=0)
 			ctable = sptab;
@@ -582,7 +612,10 @@ loop:
 				r = reg;
 			else
 				r = areg;
+
+		/* BCD: Here, recursively evaluate the subexpression into register r. */
 		rreg = rcexpr(p, ctable, r);
+
 		if (ctable!=regtab && ctable!=cregtab)
 			goto loop;
 		if (c&010)

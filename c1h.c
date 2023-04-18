@@ -15,9 +15,9 @@ struct	tnode { /* BCD: Expression tree node */
 	struct	tnode *tr1, *tr2;
 };
 
-struct	bnode { /* BCD: Branch tree node */
+struct	bnode { /* BCD: Boolean tree node */
 	int	bop;
-	struct	tnode *btree;
+	struct	tnode *btree; /* BCD: btree == boolean expression */
 	int	lbl;
 	int	cond;
 };
@@ -40,11 +40,11 @@ struct	tconst { /* BCD: Constant tree node. */
 };
 
 struct	optab { /* BCD: A codegen table entry */
-	char	tabdeg1;
-	char	tabtyp1;
-	char	tabdeg2;
-	char	tabtyp2;
-	char	*tabstring;
+	char	tabdeg1; /* BCD: Maximum degree of operand 1 */
+	char	tabtyp1; /* BCD: Shape of operand 1 */
+	char	tabdeg2; /* BCD: Maximum degree of operand 2 */
+	char	tabtyp2; /* BCD: Shape of operand 2 */
+	char	*tabstring; /* BCD: Expansion rule */
 };
 
 struct	table { /* BCD: one of regtab, efftab, optab, or sptab */

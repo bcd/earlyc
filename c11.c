@@ -122,7 +122,7 @@ struct tnode *ap;
 }
 
 /* BCD: Yet another variation of dcalc(), which penalizes some
- * byte-mode instructions */
+ * byte-mode instructions further. */
 xdcalc(ap, nrleft)
 struct tnode *ap;
 {
@@ -193,17 +193,27 @@ struct tnode *ap;
 	p = ap;
 	at = p->type;
 	st = ast;
+
+	/* BCD: TODO: check comments below, I think they are all backwards */
+	/* BCD: For matching purpose, a struct is treated as an int. */
 	if ((at&07)==STRUCT)
 		at =& 077770;	/* map to int */
+
+	/* BCD: spec '0' means matches only word types */
 	if (st==0)		/* word, byte */
 		return(at>1 & at<=07);
+
+	/* BCD: spec '1' means anything but int */
 	if (st==1)		/* word */
 		return(at>0 & at<=07);
+
 	st =- 2;
 	if ((at&077740) != 0)
 		at = 020;
 	if ((at&077770) != 0)
 		at = at&07 | 020;
+
+	/* BCD: spec '2' means don't match float or double */
 	if (st==2 && at==3)
 		at = 2;
 	if (p->op==NAME && p->class==REG && op==ASSIGN && st==CHAR)
@@ -308,6 +318,8 @@ arlength(t)
  * Considerable effort is done here to make switches efficient.  No doubt,
  * the compiler itself depended on these techniques; observe the number
  * of switch statements that are present in the source code here.
+ * This is a great example of abstraction being used even in C itself; the
+ * implementation of the "switch" is no concern to the programmer.
  * Note in v6, the canned assembler was moved to separate string constants, to
  * make the core logic easier to follow. */
 pswitch(afp, alp, deflab)
@@ -319,6 +331,8 @@ struct swtab *afp, *alp;
 
 	fp = afp;
 	lp = alp;
+	/* BCD: Handle edge case when there is only case label, which is the
+	 * default. */
 	if (fp==lp) {
 		printf("jbr	L%d\n", deflab);
 		return;
@@ -329,7 +343,7 @@ struct swtab *afp, *alp;
 	ncase = lp-fp;
 	lp--;
 
-	/* BCD: The table ranges from 'afp' (first value) to 'alp' (last value). */
+	/* BCD: The table ranges from 'fp' (first value) to 'lp' (last value), inclusive. */
 	range = lp->swval - fp->swval;
 
 	/* direct switch */
@@ -342,7 +356,8 @@ struct swtab *afp, *alp;
 		 * the range.
 		 *
 		 * If the range is too large, then this is skipped, to avoid making a
-		 * big jump table, when it would mostly have default entries. */
+		 * big jump table, when it would mostly have default entries.  It must
+		 * be at least 1/3 full of non-default entries. */
 		if (fp->swval)
 			printf("sub	$%o,r0\n", fp->swval);
 		printf("cmp	r0,$%o\n", range);
@@ -437,7 +452,8 @@ esw:
 	printf(".text\n");
 }
 
-/* BCD: Sort the array of switch statement values (the 'case's). */
+/* BCD: Sort the array of switch statement values (the 'case's).
+ * Note that duplicate entries are detected and cause a compile error. */
 sort(afp, alp)
 struct swtab *afp, *alp;
 {
@@ -503,6 +519,13 @@ struct tnode *atree;
 	}
 }
 
+/* BCD: Expand a conditional branch on a complex expression.
+ * atree is any expression tree, which is taken in boolean context.
+ * cond is 0 or 1, and says whether to branch if the expression is
+ * false or true.  alabel is the jump target.
+ * Note that this involves emitting branch instructions, as well as
+ * evaluating expressions.
+ */
 cbranch(atree, albl, cond, areg)
 struct tnode *atree;
 {
@@ -516,6 +539,11 @@ struct tnode *atree;
 		return;
 	switch(tree->op) {
 
+	/* BCD: Implement short circuit evaluation for && and ||.
+	 * When expression is !x, then just invert cond.
+	 * For if (x, y), evaluate x for side effects only, then test y.
+	 * cond is passed into the assembler function, which can simply
+	 * use the negated opcode, like notrel[]. */
 	case LOGAND:
 		if (cond) {
 			cbranch(tree->tr1, l1=isn++, 0, reg);
