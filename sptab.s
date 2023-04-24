@@ -4,15 +4,15 @@
 
 .data
 _sptab=.
-	106.;	cs106  ; BCD: LOAD
-	30.;	cs30  ; BCD: INCBEF
-	31.;	cs30	; BCD: DECBEF
-	32.;	cs32	; BCD: INCAFT
-	33.;	cs32	; BCD: DECAFT
-	40.;	cs40	; BCD: PLUS
-	41.;	cs40	; BCD: MINUS
-	47.;	cs47	; BCD: AND
-	48.;	cs48	; BCD: OR
+	106.;	cs106 /* bcd - load */
+	30.;	cs30  /* bcd - incbef */
+	31.;	cs30	/* bcd - decbef */
+	32.;	cs32	/* bcd - incaft */
+	33.;	cs32	/* bcd - decaft */
+	40.;	cs40	/* bcd - plus */
+	41.;	cs40	/* bcd - minus */
+	47.;	cs47	/* bcd - and */
+	48.;	cs48	/* bcd - or */
 	0
 .text
 

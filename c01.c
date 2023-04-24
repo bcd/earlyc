@@ -164,6 +164,9 @@ build(op) {
 		t2 = 0;
 		goto nocv;
 	}
+
+	/* BCD: cvtab is arguably a 2-dimensional array, but C at this point does not
+	 * support that, hence the indexing below. */
 	cvn = cvtab[11*lintyp(t1)+lintyp(t2)];
 	leftc = cvn&0100;
 	t = leftc? t2:t1;
@@ -203,12 +206,15 @@ build(op) {
 				} else
 					goto illcv;
 			}
+			/* BCD: Convert left operand before building tree */
 			p1 = convert(p1, t, cvn, plength(p2));
 		} else {
 		rcvt:
+			/* BCD: Convert right operand before building tree */
 			p2 = convert(p2, t, cvn, plength(p1));
 		}
 nocv:;	}
+	/* Convert LESSEQ etc. into pointer version (with P suffix). */
 	if ((dope&RELAT)!=0) {
 		if (op>NEQUAL && (t1>=PTR || t2>=PTR))
 			op =+ 4;	  /* ptr relation */
@@ -221,6 +227,8 @@ nocv:;	}
 		return;
 	*cp++ = block(2,op,t,(p1->dimp==0? p2:p1)->dimp,p1,p2);
 
+	/* BCD: Do pointer conversion if necessary, after relationals maybe
+	 * updated above. */
 	if (pcvn) {
 		p1 = *--cp;
 		*cp++ = convert(p1, 0, pcvn, plength(p1->tr1));

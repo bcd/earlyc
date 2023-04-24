@@ -438,7 +438,9 @@ stmt:
 		if (nextchar()==':') {
 			/* BCD: Parse the label statement.  Note its symbol table entry is marked
 			 * as a static array, but its hoffset stores a label number.  The check for
-			 * RBRACE is weird. */
+			 * RBRACE is weird, because ANSI C requires a statement after the label,
+			 * but here, a label by itself is a statement and requires nothing else
+			 * after it. */
 			peekc = 0;
 			o1 = csym;
 			if (o1->hclass>0) {

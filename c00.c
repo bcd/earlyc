@@ -547,7 +547,8 @@ tand:
 
 	case LPARN:
 		if (andflg) {
-			/* BCD: As postfix operator, convert to function call */
+			/* BCD: As postfix operator, convert to function call.
+			 * MCALL is for calls with no arguments; CALL for other functions. */
 			o = symbol();
 			if (o==RPARN)
 				o = MCALL;

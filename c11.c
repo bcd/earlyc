@@ -221,7 +221,31 @@ struct tnode *ap;
 	return(st != at);
 }
 
-/* BCD: Print instruction name from instab */
+/* BCD: Print instruction name from instab.
+ * c is nonzero if the alternate/second form of the instruction is to be used.
+ * See c1t.s for instab as an assembly file.  Its definition in C would be like this:
+
+	struct instab instab[] = {
+		{ PLUS,		"add", "sub" },
+		{ ASPLUS,	"add", "sub" },
+		{ MINUS,		"sub", "add" },
+		{ ASMINUS,	"sub", "add" },
+		{ INCBEF,	"inc", "add" },
+		{ DECBEF,	"dec", "sub" },
+		{ INCAFT,	"inc", "add" },
+		{ DECAFT,	"dec", "sub" },
+		{ ASSNAND,	"bic", "bic" },
+		{ ASOR,		"bis", "bis" },
+		{ 55,			"bic", "bic" },
+		{ OR,			"bis", "bis" },
+		{ CALL1,		"*$",  "*$"  },
+		{ CALL2,		"",    ""    },
+		...
+	};
+
+ * Note that there is repetition in the string values, but each unique string only appears
+ * once; the pointers are duplicated.
+ */
 prins(op, c) {
 	register struct instab *insp;
 	register char *ip;
@@ -238,6 +262,10 @@ prins(op, c) {
 	error("No match' for op %d", op);
 }
 
+
+/*
+ * BCD: Return nonzero if the tree 'ap', minus a leading STAR, has a certain constant shape.
+ */
 collcon(ap)
 struct tnode *ap;
 {

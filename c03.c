@@ -7,12 +7,13 @@ Copyright 1972 Bell Telephone Laboratories, Inc.
 
 #include "c0h.c"
 
-/* BCD: Remove one level of indirection from a pointer type */
+/* BCD: Remove one level of indirection from a pointer type.
+ * e.g. "pointer to int" becomes "int". */
 decref(at)
 {
 	register t;
 
-	/* Error if PTR, FUNC, or ARRAY type */
+	/* Error if not a PTR, FUNC, or ARRAY type */
 	t = at;
 	if ((t & ~07) == 0) {
 		error("Illegal indirection");
@@ -21,7 +22,8 @@ decref(at)
 	return((t>>2) & ~07 | t&07);
 }
 
-/* BCD: Add one level of indirection to a (now) pointer type */
+/* BCD: Add one level of indirection to a (now) pointer type.
+ * e.g. "int" becomes "pointer to int". */
 incref(t)
 {
 	return((t<<2)&~034 | (t&07) | PTR);
